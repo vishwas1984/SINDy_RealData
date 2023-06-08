@@ -1,7 +1,6 @@
 #import math
 import torch
 import gpytorch
-from matplotlib import pyplot as plt
 import numpy as np
 import os
 
@@ -50,26 +49,42 @@ class ExactGPModel(gpytorch.models.ExactGP):
 ### gp_mjo class
 class gp_mjo:
     ## Initialization
-    def __init__(self, dic, kernel, width, n_iter, sigma_eps,fixed_noise) -> None:
-        self.dic = dic
+    def __init__(self, dics, dics_ids, kernel, width, n_iter, sigma_eps,fixed_noise) -> None:
+        self.dics = dics
+        self.dics_ids = dics_ids
         self.kernel = kernel
         self.width = width
         self.n_iter = n_iter
         self.sigma_eps = sigma_eps
         self.fixed_noise = fixed_noise
 
-    ## Training the model
-    def train_mjo(self):
+        keylist = ['RMM1', 'RMM2', 'phase', 'amplitude']
+        self.preds = {key: None for key in keylist}
+        self.lconfs = {key: None for key in keylist}
+        self.uconfs = {key: None for key in keylist}
 
-        dic = self.dic
+    ## Training the model
+    def train_mjo(self, data_name=None, Depend=False):
+
+        dics = self.dics
         kernel = self.kernel
         width = self.width
         n_iter = self.n_iter
         sigma_eps = self.sigma_eps
         fixed_noise = self.fixed_noise
 
-        input_x = np.vstack( ( rolling(dic['train1'][:-1], width) , rolling(dic['train2'][:-1], width) ) )
-        output_y = np.concatenate( (dic['train1'][width:], dic['train2'][width:]), axis=None )
+        if Depend:
+            input_x1 = np.vstack( ( rolling(dics['RMM1']['train1'][:-1], width) , rolling(dics['RMM1']['train2'][:-1], width) ) )
+            output_y1 = np.concatenate( (dics['RMM1']['train1'][width:], dics['RMM1']['train2'][width:]), axis=None )
+            input_x2 = np.vstack( ( rolling(dics['RMM2']['train1'][:-1], width) , rolling(dics['RMM2']['train2'][:-1], width) ) )
+            output_y2 = np.concatenate( (dics['RMM2']['train1'][width:], dics['RMM2']['train2'][width:]), axis=None )
+            
+            input_x = np.vstack( (input_x1,input_x2) )
+            output_y = np.concatenate( (output_y1,output_y2), axis=None )
+        else:
+            # RMM1 and RMM2 are independent
+            input_x = np.vstack( ( rolling(dics[data_name]['train1'][:-1], width) , rolling(dics[data_name]['train2'][:-1], width) ) )
+            output_y = np.concatenate( (dics[data_name]['train1'][width:], dics[data_name]['train2'][width:]), axis=None )
 
         train_x = torch.from_numpy(input_x).float()
         train_y = torch.from_numpy(output_y).float()
@@ -118,23 +133,24 @@ class gp_mjo:
 
 
     ## Make predictions with the model
-    def pred_mjo(self):
+    def pred_mjo(self, data_name=None):
 
         model = self.model
         likelihood = self.likelihood
-        dic = self.dic
+        dics = self.dics
         width = self.width
-        n_pred = len(dic['test']) - width
+        n_pred = len(dics[data_name]['test']) - width
 
         observed_preds = np.zeros(n_pred)
         lower_confs = np.zeros(n_pred)
         upper_confs = np.zeros(n_pred)
+        
 
         for i in range(n_pred):
             if i == 0:
-                input_x = dic['test'][i:width+i]
+                input_x = dics[data_name]['test'][i:width+i]
             else:
-                t_end = dic['test'][width+i-1]
+                t_end = dics[data_name]['test'][width+i-1]
                 temp = input_x[1:]
                 input_x = np.hstack((temp,t_end))
             
@@ -151,34 +167,69 @@ class gp_mjo:
                 observed_preds[i] = observed_pred.mean.numpy()
                 lower_confs[i] = lower.detach().numpy()
                 upper_confs[i] = upper.detach().numpy()
-        
-        self.observed_preds = observed_preds
-        self.lower_confs = lower_confs
-        self.upper_confs = upper_confs
+
+        self.preds[data_name] = observed_preds
+        self.lconfs[data_name] = lower_confs
+        self.uconfs[data_name] = upper_confs
 
     ## Plot the model fit
-    def plot_mjo(self, ax, color):
-        dic = self.dic
+    def plot_mjo(self, data_name, ax, color):
+        dics = self.dics
         width = self.width
-        observed_preds = self.observed_preds
-        lower_confs =self.lower_confs
-        upper_confs = self.upper_confs
-        n_test = len(dic['test'])
-        n_pred = len(observed_preds) # n_pred = n_test - width
+        observed_preds = self.preds[data_name]
+        lower_confs = self.lconfs[data_name]
+        upper_confs = self.uconfs[data_name]
+
+        n_pred = len(observed_preds) # n_pred = n_test - width #n_test = len(dics[data_name]['test'])
+        id_test = self.dics_ids['test']
 
 
         with torch.no_grad():
 
             # plot training data as black stars
-            ax.plot(np.arange(width), dic['test'][:width], color='black', marker='x')
-            ax.scatter(np.arange(width,width+n_pred), dic['test'][width:width+n_pred], color='black', marker='o')
+            ax.plot(id_test[0:width], dics[data_name]['test'][:width], color='black', marker='x')
+            ax.scatter(id_test[width:width+n_pred], dics[data_name]['test'][width:width+n_pred], color='black', marker='o')
             # Plot predictive means as blue line
-            ax.plot(np.arange(width,width+n_pred), observed_preds, color, linewidth=2)
-            # shade between the lower and upper confidence bounds
-            ax.fill_between(np.arange(width,width+n_pred), lower_confs, upper_confs, alpha=0.7, color=color)
-            ax.legend(['starting interval', 'truth', 'predict', 'confidence'])
+            ax.plot(id_test[width:width+n_pred], observed_preds, color, linewidth=2)
+            if data_name == 'RMM1' or 'RMM2':
+                # shade between the lower and upper confidence bounds
+                ax.fill_between(id_test[width:width+n_pred], lower_confs, upper_confs, alpha=0.7, color=color)
+                ax.legend(['starting interval', 'truth', 'predict', 'confidence'])
+            else:
+                ax.legend(['starting interval', 'truth', 'predict'])
+
+    def rmm_to_phase(self, pred_rmm1=None, pred_rmm2=None):
+        pred_rmm1 = self.preds['RMM1']
+        pred_rmm2 = self.preds['RMM2']
+        rmm_angle = np.arctan2(pred_rmm2,pred_rmm1) * 180 / np.pi
+        phase = np.zeros(len(pred_rmm1))
+
+        for i in range(8):
+            lower_angle = - 180. * (1 - i / 4.)
+            upper_angle = - 180. * (1 - (i+1) / 4.)
+            bool_angle = (rmm_angle > lower_angle) & (rmm_angle <= upper_angle)
+            phase += bool_angle.astype('int64')*(i+1)
+       
+        self.preds['phase'] = phase.astype(int)
 
 
-    ## Make predictions at specific time periods and with a lead time
-    def pred_mjo(self, period_pred, lead_time):
+    def rmm_to_amplitude(self, pred_rmm1=None, pred_rmm2=None):
+        # ampltitude is the norm of (RMM1, RMM2)
+        pred_rmm1 = self.preds['RMM1']
+        pred_rmm2 = self.preds['RMM2']
+        amplitude = np.sqrt( np.square(pred_rmm1) + np.square(pred_rmm2) )
+        self.preds['amplitude'] = amplitude
+
+
+    ## Make predictions at specific time periods with a lead time
+    def leadpred_mjo(self, period_pred, lead_time):
+        pass
+
+
+    def cor(lead_time):
+        """bivariate correlation coefficien
+        """
+        pass
+
+    def rmse(lead_time):
         pass
