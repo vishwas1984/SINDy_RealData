@@ -187,20 +187,22 @@ class gp_mjo:
         with torch.no_grad():
 
             # plot training data as black stars
-            ax.plot(id_test[0:width], dics[data_name]['test'][:width], color='black', marker='x')
+            ax.plot(id_test[0:width], dics[data_name]['test'][:width], color='black', marker='^')
             ax.scatter(id_test[width:width+n_pred], dics[data_name]['test'][width:width+n_pred], color='black', marker='o')
             # Plot predictive means as blue line
-            ax.plot(id_test[width:width+n_pred], observed_preds, color, linewidth=2)
-            if data_name == 'RMM1' or 'RMM2':
+            ax.plot(id_test[width:width+n_pred], observed_preds, color, linewidth=2, marker='x')
+            if data_name == 'RMM1' or data_name == 'RMM2':
                 # shade between the lower and upper confidence bounds
-                ax.fill_between(id_test[width:width+n_pred], lower_confs, upper_confs, alpha=0.7, color=color)
-                ax.legend(['starting interval', 'truth', 'predict', 'confidence'])
+                ax.fill_between(id_test[width:width+n_pred], lower_confs, upper_confs, alpha=0.5, color=color)
+                ax.legend(['starting interval', 'truth', 'predict', 'confidence'],fontsize=14)
             else:
-                ax.legend(['starting interval', 'truth', 'predict'])
+                ax.legend(['starting interval', 'truth', 'predict'],fontsize=14)
 
-    def rmm_to_phase(self, pred_rmm1=None, pred_rmm2=None):
-        pred_rmm1 = self.preds['RMM1']
-        pred_rmm2 = self.preds['RMM2']
+    def rmm_to_phase(self, pred_rmm1= None, pred_rmm2=None):
+        if pred_rmm1 is None:
+            pred_rmm1 = self.preds['RMM1']
+        if pred_rmm2 is None:
+            pred_rmm2 = self.preds['RMM2']
         rmm_angle = np.arctan2(pred_rmm2,pred_rmm1) * 180 / np.pi
         phase = np.zeros(len(pred_rmm1))
 
@@ -213,10 +215,13 @@ class gp_mjo:
         self.preds['phase'] = phase.astype(int)
 
 
-    def rmm_to_amplitude(self, pred_rmm1=None, pred_rmm2=None):
-        # ampltitude is the norm of (RMM1, RMM2)
-        pred_rmm1 = self.preds['RMM1']
-        pred_rmm2 = self.preds['RMM2']
+    def rmm_to_amplitude(self, pred_rmm1= None, pred_rmm2=None):
+        """ampltitude is the norm of (RMM1, RMM2)
+        """
+        if pred_rmm1 is None:
+            pred_rmm1 = self.preds['RMM1']
+        if pred_rmm2 is None:
+            pred_rmm2 = self.preds['RMM2']
         amplitude = np.sqrt( np.square(pred_rmm1) + np.square(pred_rmm2) )
         self.preds['amplitude'] = amplitude
 
