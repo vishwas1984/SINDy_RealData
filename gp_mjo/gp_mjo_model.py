@@ -133,7 +133,7 @@ class gp_mjo:
 
 
     ## Make predictions with the model
-    def pred_mjo(self, data_name=None):
+    def pred_mjo(self, data_name):
 
         model = self.model
         likelihood = self.likelihood
@@ -227,14 +227,80 @@ class gp_mjo:
 
 
     ## Make predictions at specific time periods with a lead time
-    def leadpred_mjo(self, period_pred, lead_time):
-        pass
+    def leadpred_mjo(self, data_name, n_pred, lead_time):
+        """
+        predict with fixed lead time
+        """
+        model = self.model
+        likelihood = self.likelihood
+        dics = self.dics
+        width = self.width
+
+        observed_preds = np.zeros((n_pred,lead_time))
+        lower_confs = np.zeros((n_pred,lead_time))
+        upper_confs = np.zeros((n_pred,lead_time))
+        
+        for i in range(n_pred):
+            for j in range(lead_time):
+                if j == 0:
+                    input_x = dics[data_name]['test'][j+i:width+j+i]
+                else:
+                    t_end = dics[data_name]['test'][width+j+i-1]
+                    temp = input_x[1:]
+                    input_x = np.hstack((temp,t_end))
+                
+                test_x = torch.from_numpy(input_x.reshape((1, width))).float()
+                # get into evaluation (predictive posterior) mode
+                model.eval()
+                likelihood.eval()
+
+                # make predictions by feeding model through likelihood
+                with torch.no_grad(), gpytorch.settings.fast_pred_var():
+                    observed_pred = likelihood(model(test_x))
+
+                    lower, upper = observed_pred.confidence_region()
+                    observed_preds[i,j] = observed_pred.mean.numpy()
+                    lower_confs[i,j] = lower.detach().numpy()
+                    upper_confs[i,j] = upper.detach().numpy()
+
+        self.lead_time = lead_time
+        self.n_pred4leadtime = n_pred
+        self.pred_id4leadtime  = np.arange(width+lead_time, width+lead_time+n_pred)
+        self.preds[data_name] = observed_preds
+        self.lconfs[data_name] = lower_confs
+        self.uconfs[data_name] = upper_confs
 
 
-    def cor(lead_time):
+    def cor(self):
         """bivariate correlation coefficien
         """
-        pass
+        dics = self.dics
+        pred_id = self.pred_id4leadtime
+        
+        preds_rmm1 = self.preds['RMM1'][:,-1]
+        preds_rmm2 = self.preds['RMM2'][:,-1]
 
-    def rmse(lead_time):
-        pass
+        obs_rmm1 = dics['RMM1']['test'][pred_id]
+        obs_rmm2 = dics['RMM2']['test'][pred_id]
+
+        numerator = np.dot(obs_rmm1, preds_rmm1) + np.dot(obs_rmm2, preds_rmm2)
+        denominator = np.sqrt(np.dot(obs_rmm1, obs_rmm1) + np.dot(obs_rmm2, obs_rmm2)) \
+            * np.sqrt(np.dot(preds_rmm1, preds_rmm1) + np.dot(preds_rmm2, preds_rmm2))
+        cor = numerator / denominator
+        self.cor_leadtime = cor
+    
+    def rmse(self):
+        dics = self.dics
+        pred_id = self.pred_id4leadtime
+        n_pred = self.n_pred4leadtime
+        
+        preds_rmm1 = self.preds['RMM1'][:,-1]
+        preds_rmm2 = self.preds['RMM2'][:,-1]
+
+        obs_rmm1 = dics['RMM1']['test'][pred_id]
+        obs_rmm2 = dics['RMM2']['test'][pred_id]
+
+        sum_rmm1 = np.dot(obs_rmm1-preds_rmm1,obs_rmm1-preds_rmm1)
+        sum_rmm2 = np.dot(obs_rmm2-preds_rmm2,obs_rmm2-preds_rmm2)
+        rmse =np.sqrt( (sum_rmm1 + sum_rmm2) / n_pred )
+        self.rmse_leadtime = rmse
