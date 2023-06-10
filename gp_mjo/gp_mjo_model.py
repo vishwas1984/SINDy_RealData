@@ -181,7 +181,7 @@ class gp_mjo:
         upper_confs = self.uconfs[data_name]
 
         n_pred = len(observed_preds) # n_pred = n_test - width #n_test = len(dics[data_name]['test'])
-        id_test = self.dics_ids['test']
+        id_test = self.dics_ids[data_name]['test']
 
 
         with torch.no_grad():
