@@ -133,44 +133,54 @@ class gp_mjo:
 
 
     ## Make predictions with the model
-    def pred_mjo(self, data_name):
+    def pred_mjo(self, data_name, lead_time=None, n_pred=1):
 
         model = self.model
         likelihood = self.likelihood
         dics = self.dics
         width = self.width
-        n_pred = len(dics[data_name]['test']) - width
+        if lead_time is None:
+            lead_time = len(dics[data_name]['test']) - width
 
-        observed_preds = np.zeros(n_pred)
-        lower_confs = np.zeros(n_pred)
-        upper_confs = np.zeros(n_pred)
+        observed_preds = np.zeros((n_pred,lead_time))
+        lower_confs = np.zeros((n_pred,lead_time))
+        upper_confs = np.zeros((n_pred,lead_time))
         
-
         for i in range(n_pred):
-            if i == 0:
-                input_x = dics[data_name]['test'][i:width+i]
-            else:
-                t_end = dics[data_name]['test'][width+i-1]
-                temp = input_x[1:]
-                input_x = np.hstack((temp,t_end))
-            
-            test_x = torch.from_numpy(input_x.reshape((1, width))).float()
-            # get into evaluation (predictive posterior) mode
-            model.eval()
-            likelihood.eval()
+            for j in range(lead_time):
+                if j == 0:
+                    input_x = dics[data_name]['test'][j+i:width+j+i]
+                else:
+                    t_end = dics[data_name]['test'][width+j+i-1]
+                    temp = input_x[1:]
+                    input_x = np.hstack((temp,t_end))
+                
+                test_x = torch.from_numpy(input_x.reshape((1, width))).float()
+                # get into evaluation (predictive posterior) mode
+                model.eval()
+                likelihood.eval()
 
-            # make predictions by feeding model through likelihood
-            with torch.no_grad(), gpytorch.settings.fast_pred_var():
-                observed_pred = likelihood(model(test_x))
+                # make predictions by feeding model through likelihood
+                with torch.no_grad(), gpytorch.settings.fast_pred_var():
+                    observed_pred = likelihood(model(test_x))
+                    lower, upper = observed_pred.confidence_region()
 
-                lower, upper = observed_pred.confidence_region()
-                observed_preds[i] = observed_pred.mean.numpy()
-                lower_confs[i] = lower.detach().numpy()
-                upper_confs[i] = upper.detach().numpy()
+                    observed_preds[i,j] = observed_pred.mean.numpy()
+                    lower_confs[i,j] = lower.detach().numpy()
+                    upper_confs[i,j] = upper.detach().numpy()
 
+        if n_pred == 1:
+            observed_preds = observed_preds.reshape(-1)
+            lower_confs = lower_confs.reshape(-1)
+            upper_confs = upper_confs.reshape(-1)
+
+        self.lead_time = lead_time
+        self.n_pred4leadtime = n_pred
+        self.pred_id4leadtime  = np.arange(width+lead_time, width+lead_time+n_pred)
         self.preds[data_name] = observed_preds
         self.lconfs[data_name] = lower_confs
         self.uconfs[data_name] = upper_confs
+
 
     ## Plot the model fit
     def plot_mjo(self, data_name, ax, color):
@@ -180,7 +190,7 @@ class gp_mjo:
         lower_confs = self.lconfs[data_name]
         upper_confs = self.uconfs[data_name]
 
-        n_pred = len(observed_preds) # n_pred = n_test - width #n_test = len(dics[data_name]['test'])
+        lead_time = self.lead_time#len(observed_preds) # n_pred = n_test - width #n_test = len(dics[data_name]['test'])
         id_test = self.dics_ids[data_name]['test']
 
 
@@ -188,15 +198,16 @@ class gp_mjo:
 
             # plot training data as black stars
             ax.plot(id_test[0:width], dics[data_name]['test'][:width], color='black', marker='^')
-            ax.scatter(id_test[width:width+n_pred], dics[data_name]['test'][width:width+n_pred], color='black', marker='o')
+            ax.scatter(id_test[width:width+lead_time], dics[data_name]['test'][width:width+lead_time], color='black', marker='o')
             # Plot predictive means as blue line
-            ax.plot(id_test[width:width+n_pred], observed_preds, color, linewidth=2, marker='x')
+            ax.plot(id_test[width:width+lead_time], observed_preds, color, linewidth=2, marker='x')
             if data_name == 'RMM1' or data_name == 'RMM2':
                 # shade between the lower and upper confidence bounds
-                ax.fill_between(id_test[width:width+n_pred], lower_confs, upper_confs, alpha=0.5, color=color)
+                ax.fill_between(id_test[width:width+lead_time], lower_confs, upper_confs, alpha=0.5, color=color)
                 ax.legend(['starting interval', 'truth', 'predict', 'confidence'],fontsize=14)
             else:
                 ax.legend(['starting interval', 'truth', 'predict'],fontsize=14)
+
 
     def rmm_to_phase(self, pred_rmm1= None, pred_rmm2=None):
         if pred_rmm1 is None:
@@ -224,51 +235,6 @@ class gp_mjo:
             pred_rmm2 = self.preds['RMM2']
         amplitude = np.sqrt( np.square(pred_rmm1) + np.square(pred_rmm2) )
         self.preds['amplitude'] = amplitude
-
-
-    ## Make predictions at specific time periods with a lead time
-    def leadpred_mjo(self, data_name, n_pred, lead_time):
-        """
-        predict with fixed lead time
-        """
-        model = self.model
-        likelihood = self.likelihood
-        dics = self.dics
-        width = self.width
-
-        observed_preds = np.zeros((n_pred,lead_time))
-        lower_confs = np.zeros((n_pred,lead_time))
-        upper_confs = np.zeros((n_pred,lead_time))
-        
-        for i in range(n_pred):
-            for j in range(lead_time):
-                if j == 0:
-                    input_x = dics[data_name]['test'][j+i:width+j+i]
-                else:
-                    t_end = dics[data_name]['test'][width+j+i-1]
-                    temp = input_x[1:]
-                    input_x = np.hstack((temp,t_end))
-                
-                test_x = torch.from_numpy(input_x.reshape((1, width))).float()
-                # get into evaluation (predictive posterior) mode
-                model.eval()
-                likelihood.eval()
-
-                # make predictions by feeding model through likelihood
-                with torch.no_grad(), gpytorch.settings.fast_pred_var():
-                    observed_pred = likelihood(model(test_x))
-
-                    lower, upper = observed_pred.confidence_region()
-                    observed_preds[i,j] = observed_pred.mean.numpy()
-                    lower_confs[i,j] = lower.detach().numpy()
-                    upper_confs[i,j] = upper.detach().numpy()
-
-        self.lead_time = lead_time
-        self.n_pred4leadtime = n_pred
-        self.pred_id4leadtime  = np.arange(width+lead_time, width+lead_time+n_pred)
-        self.preds[data_name] = observed_preds
-        self.lconfs[data_name] = lower_confs
-        self.uconfs[data_name] = upper_confs
 
 
     def cor(self):
