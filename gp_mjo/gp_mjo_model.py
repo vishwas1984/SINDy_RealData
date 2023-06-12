@@ -252,8 +252,9 @@ class gp_mjo:
         numerator = np.dot(obs_rmm1, preds_rmm1) + np.dot(obs_rmm2, preds_rmm2)
         denominator = np.sqrt(np.dot(obs_rmm1, obs_rmm1) + np.dot(obs_rmm2, obs_rmm2)) \
             * np.sqrt(np.dot(preds_rmm1, preds_rmm1) + np.dot(preds_rmm2, preds_rmm2))
-        cor = numerator / denominator
-        self.cor_leadtime = cor
+        self.cor_leadtime = numerator / denominator
+
+        return self.cor_leadtime
     
     def rmse(self):
         dics = self.dics
@@ -268,5 +269,39 @@ class gp_mjo:
 
         sum_rmm1 = np.dot(obs_rmm1-preds_rmm1,obs_rmm1-preds_rmm1)
         sum_rmm2 = np.dot(obs_rmm2-preds_rmm2,obs_rmm2-preds_rmm2)
-        rmse =np.sqrt( (sum_rmm1 + sum_rmm2) / n_pred )
-        self.rmse_leadtime = rmse
+        self.rmse_leadtime =np.sqrt( (sum_rmm1 + sum_rmm2) / n_pred )
+
+        return self.rmse_leadtime
+
+
+    def phase_err(self):
+        dics = self.dics
+        pred_id = self.pred_id4leadtime
+        n_pred = self.n_pred4leadtime
+        
+        preds_rmm1 = self.preds['RMM1'][:,-1]
+        preds_rmm2 = self.preds['RMM2'][:,-1]
+
+        obs_rmm1 = dics['RMM1']['test'][pred_id]
+        obs_rmm2 = dics['RMM2']['test'][pred_id]
+
+        num = np.multiply(obs_rmm1, preds_rmm2) - np.multiply(obs_rmm2, preds_rmm1)
+        den = np.multiply(obs_rmm1, preds_rmm1)
+
+        temp = np.arctan(np.divide(num,den))
+        self.phase_err = np.sum(temp) / n_pred
+
+        return self.phase_err
+
+
+    def amplitude_err(self):
+        dics = self.dics
+        pred_id = self.pred_id4leadtime
+        n_pred = self.n_pred4leadtime
+
+        preds_amplitude = self.preds['amplitude'][:,-1]
+        obs_amplitude = dics['amplitude']['test'][pred_id]
+
+        self.amplitude_err = np.sum(preds_amplitude - obs_amplitude) / n_pred
+
+        return self.amplitude_err
