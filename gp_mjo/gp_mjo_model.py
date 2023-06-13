@@ -173,13 +173,17 @@ class gp_mjo:
             observed_preds = observed_preds.reshape(-1)
             lower_confs = lower_confs.reshape(-1)
             upper_confs = upper_confs.reshape(-1)
+        
+        pred_ids = np.arange(width+lead_time, width+lead_time+n_pred)
 
         self.lead_time = lead_time
         self.n_pred4leadtime = n_pred
-        self.pred_id4leadtime  = np.arange(width+lead_time, width+lead_time+n_pred)
+        self.pred_id4leadtime  = pred_ids
         self.preds[data_name] = observed_preds
         self.lconfs[data_name] = lower_confs
         self.uconfs[data_name] = upper_confs
+
+        return observed_preds, pred_ids
 
 
     ## Plot the model fit
@@ -235,16 +239,24 @@ class gp_mjo:
             pred_rmm2 = self.preds['RMM2']
         amplitude = np.sqrt( np.square(pred_rmm1) + np.square(pred_rmm2) )
         self.preds['amplitude'] = amplitude
+        return amplitude
 
 
-    def cor(self):
+    def cor(self, pred_rmm1= None, pred_rmm2=None, pred_id=None):
         """bivariate correlation coefficien
         """
         dics = self.dics
-        pred_id = self.pred_id4leadtime
+
+        if pred_rmm1 is None:
+            pred_rmm1 = self.preds['RMM1']
+        if pred_rmm2 is None:
+            pred_rmm2 = self.preds['RMM2']
+        if pred_id is None:
+            pred_id = self.pred_id4leadtime
+
         
-        preds_rmm1 = self.preds['RMM1'][:,-1]
-        preds_rmm2 = self.preds['RMM2'][:,-1]
+        preds_rmm1 = pred_rmm1[:,-1]
+        preds_rmm2 = pred_rmm2[:,-1]
 
         obs_rmm1 = dics['RMM1']['test'][pred_id]
         obs_rmm2 = dics['RMM2']['test'][pred_id]
@@ -256,13 +268,19 @@ class gp_mjo:
 
         return self.cor_leadtime
     
-    def rmse(self):
+    def rmse(self, pred_rmm1= None, pred_rmm2=None, pred_id=None):
         dics = self.dics
-        pred_id = self.pred_id4leadtime
-        n_pred = self.n_pred4leadtime
+
+        if pred_rmm1 is None:
+            pred_rmm1 = self.preds['RMM1']
+        if pred_rmm2 is None:
+            pred_rmm2 = self.preds['RMM2']
+        if pred_id is None:
+            pred_id = self.pred_id4leadtime
+        n_pred = len(pred_id)
         
-        preds_rmm1 = self.preds['RMM1'][:,-1]
-        preds_rmm2 = self.preds['RMM2'][:,-1]
+        preds_rmm1 = pred_rmm1[:,-1]
+        preds_rmm2 = pred_rmm2[:,-1]
 
         obs_rmm1 = dics['RMM1']['test'][pred_id]
         obs_rmm2 = dics['RMM2']['test'][pred_id]
@@ -274,13 +292,20 @@ class gp_mjo:
         return self.rmse_leadtime
 
 
-    def phase_err(self):
+    def phase_err(self, pred_rmm1= None, pred_rmm2=None, pred_id=None):
         dics = self.dics
-        pred_id = self.pred_id4leadtime
-        n_pred = self.n_pred4leadtime
         
-        preds_rmm1 = self.preds['RMM1'][:,-1]
-        preds_rmm2 = self.preds['RMM2'][:,-1]
+        if pred_rmm1 is None:
+            pred_rmm1 = self.preds['RMM1']
+        if pred_rmm2 is None:
+            pred_rmm2 = self.preds['RMM2']
+        if pred_id is None:
+            pred_id = self.pred_id4leadtime
+        n_pred = len(pred_id)
+        
+        
+        preds_rmm1 = pred_rmm1[:,-1]
+        preds_rmm2 = pred_rmm2[:,-1]
 
         obs_rmm1 = dics['RMM1']['test'][pred_id]
         obs_rmm2 = dics['RMM2']['test'][pred_id]
@@ -289,19 +314,25 @@ class gp_mjo:
         den = np.multiply(obs_rmm1, preds_rmm1)
 
         temp = np.arctan(np.divide(num,den))
-        self.phase_err = np.sum(temp) / n_pred
+        self.phase_err_leadtime = np.sum(temp) / n_pred
 
-        return self.phase_err
+        return self.phase_err_leadtime
 
 
-    def amplitude_err(self):
+    def amplitude_err(self, pred_rmm1= None, pred_rmm2=None, pred_id=None):
         dics = self.dics
-        pred_id = self.pred_id4leadtime
-        n_pred = self.n_pred4leadtime
 
-        preds_amplitude = self.preds['amplitude'][:,-1]
+        if pred_rmm1 is None:
+            pred_rmm1 = self.preds['RMM1']
+        if pred_rmm2 is None:
+            pred_rmm2 = self.preds['RMM2']
+        if pred_id is None:
+            pred_id = self.pred_id4leadtime
+        n_pred = len(pred_id)
+        
+        preds_amplitude = self.rmm_to_amplitude(pred_rmm1[:,-1],pred_rmm2[:,-1])
         obs_amplitude = dics['amplitude']['test'][pred_id]
 
-        self.amplitude_err = np.sum(preds_amplitude - obs_amplitude) / n_pred
+        self.amplitude_err_leadtime = np.sum(preds_amplitude - obs_amplitude) / n_pred
 
-        return self.amplitude_err
+        return self.amplitude_err_leadtime

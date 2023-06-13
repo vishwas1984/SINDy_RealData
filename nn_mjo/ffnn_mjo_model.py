@@ -2,26 +2,85 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class Net(nn.Module):
+class FFNNModel(nn.Module):
 
-    def __init__(self):
-        super(Net, self).__init__()
-        # 1 input image channel, 6 output channels, 5x5 square convolution
-        # kernel
-        self.conv1 = nn.Conv2d(1, 6, 5)
-        self.conv2 = nn.Conv2d(6, 16, 5)
-        # an affine operation: y = Wx + b
-        self.fc1 = nn.Linear(16 * 5 * 5, 120)  # 5*5 from image dimension
-        self.fc2 = nn.Linear(120, 84)
-        self.fc3 = nn.Linear(84, 10)
+    def __init__(self, input_dim, hidden_dim, output_dim):
+        super(FFNNModel, self).__init__()
+
+        # an affine operation: y = Wx + b, linear function
+        self.fc1 = nn.Linear(input_dim, hidden_dim)  # 5*5 from image dimension
+        
+        # non-linearity
+        self.relu = nn.ReLU()
+
+        # Linear function (readout)
+        self.fc2 = nn.Linear(hidden_dim, output_dim)
 
     def forward(self, x):
-        # Max pooling over a (2, 2) window
-        x = F.max_pool2d(F.relu(self.conv1(x)), (2, 2))
-        # If the size is a square, you can specify with a single number
-        x = F.max_pool2d(F.relu(self.conv2(x)), 2)
-        x = torch.flatten(x, 1) # flatten all dimensions except the batch dimension
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
+        #x = torch.flatten(x, 1) # flatten all dimensions except the batch dimension
+        x = self.relu(self.fc1(x))
+        x = self.fc2(x)
         return x
+
+lead_time = 10
+input_dim = 300*2
+hidden_dim = 64
+output_dim = lead_time * 2
+
+
+class mjo_dataset(torch.utils.data.Dataset):
+    def __init__(self,x,y):
+        self.x = torch.tensor(x,dtype=torch.float32)
+        self.y = torch.tensor(y,dtype=torch.float32)
+        self.length = self.x.shape[0]
+    def __getitem__(self,idx):
+        return self.x[idx], self.y[idx]
+    def __len__(self):
+        return self.length
+mjo_dataset(x,y)
+
+class ffnn_mjo:
+    def __init__(self, dics, dics_ids, width, dims, num_epochs,lr=0.001) -> None:
+        self.dics = dics
+        self.dics_ids = dics_ids
+        self.width = width
+        self.input_dim = dims['input']
+        self.hidden_dim = dims['hidden']
+        self.output_dim = dims['output']
+        self.num_epochs = num_epochs
+        self.lr = lr
+
+        #dataloader
+        dataloader = torch.utils.data.DataLoader(dataset=dataset,shuffle=True,batch_size=batch_size)
+
+    def train_mjo(self):
+        input_dim = self.input_dim
+        hidden_dim = self.hidden_dim
+        output_dim = self.output_dim
+        num_epochs = self.num_epochs
+        lr = self.lr
+        
+        model = FFNNModel(input_dim,hidden_dim,output_dim) # instantiate the model class
+        criterion = nn.MSELoss() # instantiate the loss class
+        optimizer = torch.optim.SGD(model.parameters(), lr=lr) # instantiate the optimizer class
+
+        # training the model
+        iter = 0
+        for epoch in range(num_epochs):
+            # Load images with gradient accumulation capabilities
+            images = images.view(-1, 28*28).requires_grad_()
+
+            # clear gradients w.r.t. parameters
+            optimizer.zero_grad()
+
+            # forward pass to get output/logits
+            outputs = model(images)
+
+            # calculate Loss: softmax --> cross entropy loss
+            loss = criterion(outputs, labels)
+
+            # getting gradients w.r.t. parameters
+            loss.backward()
+
+            # updating parameters
+            optimizer.step()
