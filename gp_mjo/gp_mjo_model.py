@@ -59,9 +59,12 @@ class gp_mjo:
         self.fixed_noise = fixed_noise
 
         keylist = ['RMM1', 'RMM2', 'phase', 'amplitude']
+        errlist = ['cor','rmse','phase','amplitude']
+        self.obs = {key: None for key in keylist}
         self.preds = {key: None for key in keylist}
         self.lconfs = {key: None for key in keylist}
         self.uconfs = {key: None for key in keylist}
+        self.errs = {key: None for key in errlist}
 
     ## Training the model
     def train_mjo(self, data_name=None, Depend=False):
@@ -139,7 +142,7 @@ class gp_mjo:
         likelihood = self.likelihood
         dics = self.dics
         width = self.width
-        if lead_time is None:
+        if lead_time is None or n_pred == 1:
             lead_time = len(dics[data_name]['test']) - width
 
         observed_preds = np.zeros((n_pred,lead_time))
@@ -151,9 +154,9 @@ class gp_mjo:
                 if j == 0:
                     input_x = dics[data_name]['test'][j+i:width+j+i]
                 else:
-                    t_end = dics[data_name]['test'][width+j+i-1]
+                    t_last_pred = observed_preds[i,j-1]
                     temp = input_x[1:]
-                    input_x = np.hstack((temp,t_end))
+                    input_x = np.hstack((temp,t_last_pred))
                 
                 test_x = torch.from_numpy(input_x.reshape((1, width))).float()
                 # get into evaluation (predictive posterior) mode
@@ -169,21 +172,12 @@ class gp_mjo:
                     lower_confs[i,j] = lower.detach().numpy()
                     upper_confs[i,j] = upper.detach().numpy()
 
-        if n_pred == 1:
-            observed_preds = observed_preds.reshape(-1)
-            lower_confs = lower_confs.reshape(-1)
-            upper_confs = upper_confs.reshape(-1)
-        
-        pred_ids = np.arange(width+lead_time, width+lead_time+n_pred)
-
         self.lead_time = lead_time
-        self.n_pred4leadtime = n_pred
-        self.pred_id4leadtime  = pred_ids
+        self.n_pred = n_pred
         self.preds[data_name] = observed_preds
         self.lconfs[data_name] = lower_confs
         self.uconfs[data_name] = upper_confs
 
-        return observed_preds, pred_ids
 
 
     ## Plot the model fit
@@ -202,24 +196,23 @@ class gp_mjo:
 
             # plot training data as black stars
             ax.plot(id_test[0:width], dics[data_name]['test'][:width], color='black', marker='^')
-            ax.scatter(id_test[width:width+lead_time], dics[data_name]['test'][width:width+lead_time], color='black', marker='o')
+            ax.plot(id_test[width:width+lead_time], dics[data_name]['test'][width:width+lead_time], color='black', marker='o')
             # Plot predictive means as blue line
-            ax.plot(id_test[width:width+lead_time], observed_preds, color, linewidth=2, marker='x')
+            ax.plot(id_test[width:width+lead_time], observed_preds.reshape(-1), color, linewidth=2, marker='x')
             if data_name == 'RMM1' or data_name == 'RMM2':
                 # shade between the lower and upper confidence bounds
-                ax.fill_between(id_test[width:width+lead_time], lower_confs, upper_confs, alpha=0.5, color=color)
+                ax.fill_between(id_test[width:width+lead_time], lower_confs.reshape(-1), upper_confs.reshape(-1), alpha=0.5, color=color)
                 ax.legend(['starting interval', 'truth', 'predict', 'confidence'],fontsize=14)
             else:
                 ax.legend(['starting interval', 'truth', 'predict'],fontsize=14)
 
-
-    def rmm_to_phase(self, pred_rmm1= None, pred_rmm2=None):
+    def rmm_to_phase(self, pred_rmm1=None, pred_rmm2=None):
         if pred_rmm1 is None:
             pred_rmm1 = self.preds['RMM1']
         if pred_rmm2 is None:
             pred_rmm2 = self.preds['RMM2']
         rmm_angle = np.arctan2(pred_rmm2,pred_rmm1) * 180 / np.pi
-        phase = np.zeros(len(pred_rmm1))
+        phase = np.zeros(pred_rmm1.shape)
 
         for i in range(8):
             lower_angle = - 180. * (1 - i / 4.)
@@ -228,9 +221,10 @@ class gp_mjo:
             phase += bool_angle.astype('int64')*(i+1)
        
         self.preds['phase'] = phase.astype(int)
+        return self.preds['phase']
 
 
-    def rmm_to_amplitude(self, pred_rmm1= None, pred_rmm2=None):
+    def rmm_to_amplitude(self, pred_rmm1=None, pred_rmm2=None):
         """ampltitude is the norm of (RMM1, RMM2)
         """
         if pred_rmm1 is None:
@@ -241,98 +235,78 @@ class gp_mjo:
         self.preds['amplitude'] = amplitude
         return amplitude
 
+    def obs_extract(self):
+        dics = self.dics
+        width = self.width
+        lead_time = self.lead_time
+        n_pred = self.n_pred
 
-    def cor(self, pred_rmm1= None, pred_rmm2=None, pred_id=None):
+        rmm1_temp = dics['RMM1']['test'][width: width+lead_time+n_pred-1]
+        rmm2_temp = dics['RMM2']['test'][width: width+lead_time+n_pred-1]
+        amplitude_temp = dics['amplitude']['test'][width: width+lead_time+n_pred-1]
+        
+        self.obs['RMM1'] = rolling(rmm1_temp, lead_time) # n_pred*lead_time numpy array
+        self.obs['RMM2'] = rolling(rmm2_temp, lead_time) # n_pred*lead_time numpy array
+        self.obs['amplitude'] = rolling(amplitude_temp, lead_time)
+
+    
+    def cor(self):
         """bivariate correlation coefficien
         """
-        dics = self.dics
+        pred_rmm1 = self.preds['RMM1']
+        pred_rmm2 = self.preds['RMM2']
 
-        if pred_rmm1 is None:
-            pred_rmm1 = self.preds['RMM1']
-        if pred_rmm2 is None:
-            pred_rmm2 = self.preds['RMM2']
-        if pred_id is None:
-            pred_id = self.pred_id4leadtime
+        obs_rmm1 = self.obs['RMM1']
+        obs_rmm2 = self.obs['RMM2']
 
-        
-        preds_rmm1 = pred_rmm1[:,-1]
-        preds_rmm2 = pred_rmm2[:,-1]
+        numerator = np.sum((obs_rmm1*pred_rmm1 + obs_rmm2*pred_rmm2), axis=0) # 1*lead_time numpy array
+        denominator = np.sum(np.sqrt(obs_rmm1**2 + obs_rmm2**2),axis=0) \
+            * np.sum(np.sqrt(pred_rmm1**2 + pred_rmm2**2),axis=0)
+        self.errs['cor'] = (numerator / denominator).reshape(-1) # shape = (lead_time,) numpy array
 
-        obs_rmm1 = dics['RMM1']['test'][pred_id]
-        obs_rmm2 = dics['RMM2']['test'][pred_id]
-
-        numerator = np.dot(obs_rmm1, preds_rmm1) + np.dot(obs_rmm2, preds_rmm2)
-        denominator = np.sqrt(np.dot(obs_rmm1, obs_rmm1) + np.dot(obs_rmm2, obs_rmm2)) \
-            * np.sqrt(np.dot(preds_rmm1, preds_rmm1) + np.dot(preds_rmm2, preds_rmm2))
-        self.cor_leadtime = numerator / denominator
-
-        return self.cor_leadtime
+        return self.errs['cor']
     
-    def rmse(self, pred_rmm1= None, pred_rmm2=None, pred_id=None):
-        dics = self.dics
+   
+    def rmse(self):
+        pred_rmm1 = self.preds['RMM1']
+        pred_rmm2 = self.preds['RMM2']
 
-        if pred_rmm1 is None:
-            pred_rmm1 = self.preds['RMM1']
-        if pred_rmm2 is None:
-            pred_rmm2 = self.preds['RMM2']
-        if pred_id is None:
-            pred_id = self.pred_id4leadtime
-        n_pred = len(pred_id)
-        
-        preds_rmm1 = pred_rmm1[:,-1]
-        preds_rmm2 = pred_rmm2[:,-1]
+        obs_rmm1 = self.obs['RMM1']
+        obs_rmm2 = self.obs['RMM2']
+        n_pred = pred_rmm1.shape[0]
 
-        obs_rmm1 = dics['RMM1']['test'][pred_id]
-        obs_rmm2 = dics['RMM2']['test'][pred_id]
+        sum_rmm1 = np.sum((obs_rmm1-pred_rmm1)**2, axis=0)
+        sum_rmm2 = np.sum((obs_rmm2-pred_rmm2)**2, axis=0)
+        self.errs['rmse'] = ( np.sqrt( (sum_rmm1 + sum_rmm2) / n_pred ) ).reshape(-1)
 
-        sum_rmm1 = np.dot(obs_rmm1-preds_rmm1,obs_rmm1-preds_rmm1)
-        sum_rmm2 = np.dot(obs_rmm2-preds_rmm2,obs_rmm2-preds_rmm2)
-        self.rmse_leadtime =np.sqrt( (sum_rmm1 + sum_rmm2) / n_pred )
-
-        return self.rmse_leadtime
+        return self.errs['rmse']
 
 
-    def phase_err(self, pred_rmm1= None, pred_rmm2=None, pred_id=None):
-        dics = self.dics
-        
-        if pred_rmm1 is None:
-            pred_rmm1 = self.preds['RMM1']
-        if pred_rmm2 is None:
-            pred_rmm2 = self.preds['RMM2']
-        if pred_id is None:
-            pred_id = self.pred_id4leadtime
-        n_pred = len(pred_id)
-        
-        
-        preds_rmm1 = pred_rmm1[:,-1]
-        preds_rmm2 = pred_rmm2[:,-1]
+    def phase_err(self):
+        pred_rmm1 = self.preds['RMM1']
+        pred_rmm2 = self.preds['RMM2']
 
-        obs_rmm1 = dics['RMM1']['test'][pred_id]
-        obs_rmm2 = dics['RMM2']['test'][pred_id]
+        obs_rmm1 = self.obs['RMM1']
+        obs_rmm2 = self.obs['RMM2']
+        n_pred = pred_rmm1.shape[0]
 
-        num = np.multiply(obs_rmm1, preds_rmm2) - np.multiply(obs_rmm2, preds_rmm1)
-        den = np.multiply(obs_rmm1, preds_rmm1)
+        num = obs_rmm1*pred_rmm2 - obs_rmm2*pred_rmm1
+        den = obs_rmm1*pred_rmm1
 
         temp = np.arctan(np.divide(num,den))
-        self.phase_err_leadtime = np.sum(temp) / n_pred
+        self.errs['phase'] = ( np.sum(temp, axis=0) / n_pred ).reshape(-1)
 
-        return self.phase_err_leadtime
+        return self.errs['phase']
 
-
-    def amplitude_err(self, pred_rmm1= None, pred_rmm2=None, pred_id=None):
-        dics = self.dics
-
-        if pred_rmm1 is None:
-            pred_rmm1 = self.preds['RMM1']
-        if pred_rmm2 is None:
-            pred_rmm2 = self.preds['RMM2']
-        if pred_id is None:
-            pred_id = self.pred_id4leadtime
-        n_pred = len(pred_id)
+   
+    def amplitude_err(self):
+        pred_rmm1 = self.preds['RMM1']
+        pred_rmm2 = self.preds['RMM2']
+        n_pred = pred_rmm1.shape[0]
+        preds_amplitude = self.rmm_to_amplitude(pred_rmm1,pred_rmm2)
         
-        preds_amplitude = self.rmm_to_amplitude(pred_rmm1[:,-1],pred_rmm2[:,-1])
-        obs_amplitude = dics['amplitude']['test'][pred_id]
+        obs_amplitude = self.obs['amplitude']
 
-        self.amplitude_err_leadtime = np.sum(preds_amplitude - obs_amplitude) / n_pred
+        self.errs['amplitude'] = (np.sum((preds_amplitude - obs_amplitude),axis=0) / n_pred).reshape(-1)
 
-        return self.amplitude_err_leadtime
+        return self.errs['amplitude'] 
