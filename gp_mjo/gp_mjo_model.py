@@ -1,6 +1,8 @@
-#import math
+from typing import Optional, Tuple
+from gpytorch.priors import Prior
 import torch
 import gpytorch
+from gpytorch.constraints import Interval, Positive
 import numpy as np
 import os
 
@@ -45,6 +47,67 @@ class ExactGPModel(gpytorch.models.ExactGP):
         mean_x = self.mean_module(x)
         covar_x = self.covar_module(x)
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
+
+
+## Define a custom kernel
+class CustomKernel(gpytorch.kernels.Kernel):
+    is_stationary = True # cutom kernel is stationary
+
+    def __init__(self, ard_num_dims: int | None = None, batch_shape: Size | None = None, active_dims: Tuple[int, ...] | None = None, lengthscale_prior: Prior | None = None, lengthscale_constraint: Interval | None = None, eps: float = 0.000001, **kwargs):
+        super().__init__(ard_num_dims, batch_shape, active_dims, lengthscale_prior, lengthscale_constraint, eps, **kwargs)
+
+        # register the raw parameter
+        self.register_parameter(
+            name='raw_length', parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape,))
+        )
+
+        # set the parameter constraint to be positive, when nothing is specified
+        if length_constraint is None:
+            length_constraint = Positive()
+
+        # register the constraint
+        self.register_constraint("raw_length", length_constraint)
+
+        # set the parameter prior, see
+        # https://docs.gpytorch.ai/en/latest/module.html#gpytorch.Module.register_prior
+        if lengthscale_prior is not None:
+            self.register_prior(
+                "length_prior",
+                lengthscale_prior,
+                lambda m: m.length,
+                lambda m, v : m._set_length(v),
+            )
+
+    # now set up the 'actual' paramter
+    @property
+    def length(self):
+        # when accessing the parameter, apply the constraint transform
+        return self.raw_length_constraint.transform(self.raw_length)
+
+    @length.setter
+    def length(self, value):
+        return self._set_length(value)
+
+    def _set_length(self, value):
+        if not torch.is_tensor(value):
+            value = torch.as_tensor(value).to(self.raw_length)
+        # when setting the paramater, transform the actual value to a raw one by applying the inverse transform
+        self.initialize(raw_length=self.raw_length_constraint.inverse_transform(value))
+
+    # this is the kernel function
+    def forward(self, x1, x2, **params):
+        # apply lengthscale
+        x1_ = x1.div(self.length)
+        x2_ = x2.div(self.length)
+        # calculate the distance between inputs
+        diff = self.covar_dist(x1_, x2_, **params)
+        # prevent divide by 0 errors
+        diff.where(diff == 0, torch.as_tensor(1e-20))
+        # return sinc(diff) = sin(diff) / diff
+        return torch.sin(diff).div(diff)
+
+
+
 
 ### gp_mjo class
 class gp_mjo:
@@ -260,8 +323,8 @@ class gp_mjo:
         obs_rmm2 = self.obs['RMM2']
 
         numerator = np.sum((obs_rmm1*pred_rmm1 + obs_rmm2*pred_rmm2), axis=0) # 1*lead_time numpy array
-        denominator = np.sum(np.sqrt(obs_rmm1**2 + obs_rmm2**2),axis=0) \
-            * np.sum(np.sqrt(pred_rmm1**2 + pred_rmm2**2),axis=0)
+        denominator = np.sqrt(np.sum((obs_rmm1**2 + obs_rmm2**2),axis=0)) \
+            * np.sqrt(np.sum((pred_rmm1**2 + pred_rmm2**2),axis=0))
         self.errs['cor'] = (numerator / denominator).reshape(-1) # shape = (lead_time,) numpy array
 
         return self.errs['cor']
