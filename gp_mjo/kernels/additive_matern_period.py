@@ -125,10 +125,10 @@ class CustomAdditiveKernel(gpytorch.kernels.Kernel):
 
         if self.lengthscale_unique:
 
-            K = w0 * gpytorch.kernels.MaternKernel(nu=0.5).forward(x1=x1, x2=x2) \
-            + w1 * gpytorch.kernels.MaternKernel(nu=1.5).forward(x1=x1, x2=x2) \
-            + w2 * gpytorch.kernels.MaternKernel(nu=2.5).forward(x1=x1, x2=x2) \
-            + w3 * gpytorch.kernels.PeriodicKernel().forward(x1=x1, x2=x2)
+            K = w0 * gpytorch.kernels.MaternKernel(nu=0.5).forward(x1=x1, x2=x2, diag=diag) \
+            + w1 * gpytorch.kernels.MaternKernel(nu=1.5).forward(x1=x1, x2=x2, diag=diag) \
+            + w2 * gpytorch.kernels.MaternKernel(nu=2.5).forward(x1=x1, x2=x2, diag=diag) \
+            + w3 * gpytorch.kernels.PeriodicKernel().forward(x1=x1, x2=x2, diag=diag)
         
         else:
 

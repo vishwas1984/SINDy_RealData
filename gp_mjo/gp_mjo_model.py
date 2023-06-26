@@ -139,47 +139,98 @@ class gp_mjo:
 
 
     ## Make predictions with the model
-    def pred_mjo(self, data_name, lead_time=None, n_pred=1):
+    def pred_mjo(self, data_name=None, lead_time=None, n_pred=1, Depend=False):
 
         model = self.model
         likelihood = self.likelihood
         dics = self.dics
         width = self.width
-        if lead_time is None or n_pred == 1:
-            lead_time = len(dics[data_name]['test']) - width
 
-        observed_preds = np.zeros((n_pred,lead_time))
-        lower_confs = np.zeros((n_pred,lead_time))
-        upper_confs = np.zeros((n_pred,lead_time))
+        if Depend or data_name is None:
+            if lead_time is None or n_pred == 1:
+                lead_time = len(dics['RMM1']['test']) - width
+            observed_preds={}
+            lower_confs = {}
+            upper_confs = {}
+            for rmm in ['RMM1', 'RMM2']:
+                observed_preds[rmm] = np.zeros((n_pred,lead_time))
+                lower_confs[rmm] = np.zeros((n_pred,lead_time))
+                upper_confs[rmm] = np.zeros((n_pred,lead_time))
+            for i in range(n_pred):
+                for j in range(lead_time):
+                    if j == 0:
+                        input_x1 = dics['RMM1']['test'][j+i:width+j+i]
+                        input_x2 = dics['RMM2']['test'][j+i:width+j+i]
+                        input_x = np.vstack((input_x1, input_x2))
+                    else:
+                        t_last_pred_x1 = observed_preds['RMM1'][i,j-1]
+                        temp_x1 = input_x1[1:]
+                        input_x1 = np.hstack((temp_x1,t_last_pred_x1))
+                        
+                        t_last_pred_x2 = observed_preds['RMM2'][i,j-1]
+                        temp_x2 = input_x2[1:]
+                        input_x2 = np.hstack((temp_x2,t_last_pred_x2))
+
+                        input_x = np.vstack((input_x1, input_x2))
+                    
+                    test_x = torch.from_numpy(input_x.reshape((2, width))).float()
+                    # get into evaluation (predictive posterior) mode
+                    model.eval()
+                    likelihood.eval()
+
+                    # make predictions by feeding model through likelihood
+                    with torch.no_grad(), gpytorch.settings.fast_pred_var():
+                        observed_pred = likelihood(model(test_x))
+                        lower, upper = observed_pred.confidence_region()
+                        
+                        for k, rmm in enumerate(['RMM1','RMM2']):
+                            observed_preds[rmm][i,j] = observed_pred.mean.numpy()[k]
+                            lower_confs[rmm][i,j] = lower.detach().numpy()[k]
+                            upper_confs[rmm][i,j] = upper.detach().numpy()[k]
+            
+            self.lead_time = lead_time
+            self.n_pred = n_pred
+            for rmm in ['RMM1','RMM2']:
+                self.preds[rmm] = observed_preds[rmm]
+                self.lconfs[rmm] = lower_confs[rmm]
+                self.uconfs[rmm] = upper_confs[rmm]
         
-        for i in range(n_pred):
-            for j in range(lead_time):
-                if j == 0:
-                    input_x = dics[data_name]['test'][j+i:width+j+i]
-                else:
-                    t_last_pred = observed_preds[i,j-1]
-                    temp = input_x[1:]
-                    input_x = np.hstack((temp,t_last_pred))
-                
-                test_x = torch.from_numpy(input_x.reshape((1, width))).float()
-                # get into evaluation (predictive posterior) mode
-                model.eval()
-                likelihood.eval()
+        else:
+            if lead_time is None or n_pred == 1:
+                lead_time = len(dics[data_name]['test']) - width
 
-                # make predictions by feeding model through likelihood
-                with torch.no_grad(), gpytorch.settings.fast_pred_var():
-                    observed_pred = likelihood(model(test_x))
-                    lower, upper = observed_pred.confidence_region()
+            observed_preds = np.zeros((n_pred,lead_time))
+            lower_confs = np.zeros((n_pred,lead_time))
+            upper_confs = np.zeros((n_pred,lead_time))
+            
+            for i in range(n_pred):
+                for j in range(lead_time):
+                    if j == 0:
+                        input_x = dics[data_name]['test'][j+i:width+j+i]
+                    else:
+                        t_last_pred = observed_preds[i,j-1]
+                        temp = input_x[1:]
+                        input_x = np.hstack((temp,t_last_pred))
+                    
+                    test_x = torch.from_numpy(input_x.reshape((1, width))).float()
+                    # get into evaluation (predictive posterior) mode
+                    model.eval()
+                    likelihood.eval()
 
-                    observed_preds[i,j] = observed_pred.mean.numpy()
-                    lower_confs[i,j] = lower.detach().numpy()
-                    upper_confs[i,j] = upper.detach().numpy()
+                    # make predictions by feeding model through likelihood
+                    with torch.no_grad(), gpytorch.settings.fast_pred_var():
+                        observed_pred = likelihood(model(test_x))
+                        lower, upper = observed_pred.confidence_region()
 
-        self.lead_time = lead_time
-        self.n_pred = n_pred
-        self.preds[data_name] = observed_preds
-        self.lconfs[data_name] = lower_confs
-        self.uconfs[data_name] = upper_confs
+                        observed_preds[i,j] = observed_pred.mean.numpy()
+                        lower_confs[i,j] = lower.detach().numpy()
+                        upper_confs[i,j] = upper.detach().numpy()
+
+            self.lead_time = lead_time
+            self.n_pred = n_pred
+            self.preds[data_name] = observed_preds
+            self.lconfs[data_name] = lower_confs
+            self.uconfs[data_name] = upper_confs
 
 
 
@@ -312,4 +363,129 @@ class gp_mjo:
 
         self.errs['amplitude'] = (np.sum((preds_amplitude - obs_amplitude),axis=0) / n_pred).reshape(-1)
 
-        return self.errs['amplitude'] 
+        return self.errs['amplitude']
+
+
+# import sys
+# sys.path.append('../')
+# import random
+# import pickle
+# import torch
+# import gpytorch
+# from gp_mjo_model import gp_mjo
+# from utils.dat_ops import dics_divide
+
+# from prettytable import PrettyTable
+# from matplotlib import pyplot as plt
+# import matplotlib.colors as mcolors
+# from matplotlib.markers import MarkerStyle
+
+# npzfile = np.load('/Users/hchen/SINDy_RealData/data/mjo_new_data.npz', allow_pickle=True)
+
+# ## Divide new_datas into four seasons
+# npz_month = npzfile['month']
+# winter_ids = np.where( (npz_month==12) | (npz_month==1) | (npz_month==2) )[0]
+# spring_ids = np.where( (npz_month==3) | (npz_month==4) | (npz_month==5) )[0]
+# summer_ids = np.where( (npz_month==6) | (npz_month==7) | (npz_month==8) )[0]
+# fall_ids = np.where( (npz_month==9) | (npz_month==10) | (npz_month==11) )[0]
+# seasons = ['winter','spring','summer','fall']
+# seasons_ids = [winter_ids, spring_ids, summer_ids, fall_ids]
+# data_names = npzfile.files
+# n_files = len(npzfile.files)
+
+# season_datas = {}
+# for j in range(4):
+#     season = seasons[j]
+#     season_id = seasons_ids[j]
+
+#     new_datas = [0]*n_files
+#     for i in range(n_files):
+#         new_datas[i] = npzfile[data_names[i]][season_id]
+
+#     season_datas[season] = new_datas
+
+#     ## Set initial values
+# widths = [40]
+# n_iter = 200
+# sigma_eps = 0.01
+# fixed_noise = False
+
+# Ns = [len(winter_ids),len(spring_ids),len(summer_ids),len(fall_ids)]# the total number of days in new dataset
+# n = 100 # the number of days for training
+# c = 365 # the number of dropped buffer set
+# ms = [N-n-c for N in Ns] # the number of days for testing
+
+
+# n_cv = 1 # the number of operations for cross-validation
+# n1s  = [random.randint(0,n) for i in range(n_cv)]
+# n1s = [2165]
+
+# ## Set the kernel of GP
+# nu = 0.5 # 1.5,2.5.... smoothness parameter of Matern kernel
+# d = 1 # d = width or d = 1
+# kernel = gpytorch.kernels.MaternKernel(nu=nu, ard_num_dims=d)
+
+# lead_time = 6
+# n_pred = 20 # 14*365
+
+# from IPython.display import display, Markdown
+# from kernels.block_kernel import CustomBlockKernel
+# nu =0.5
+# kernel = CustomBlockKernel(nu=nu, num_paras = 1, para_upper=2.0)
+
+# # Dependent
+# dics_total_maternblock = {}
+# cor_total_maternblock = {}
+# rmse_total_maternblock = {}
+# phase_err_total_maternblock = {}
+# amplitude_err_total_maternblock = {}
+
+# t = PrettyTable(["season", "width", "RMMs", "lengthscale", "parameter"])
+
+# for m, season in zip(ms,seasons):
+
+#     cor_n1 = {}
+#     rmse_n1 = {}
+#     phase_err_n1 = {}
+#     amplitude_err_n1 = {}
+#     for n1 in n1s:
+#         dics, dics_ids = dics_divide(season_datas[season], data_names, n1, m, n, c)
+#         dics_total_maternblock[n1] = dics
+
+#         cor_width = {}
+#         rmse_width = {}
+#         phase_err_width = {}
+#         amplitude_err_width = {}
+#         for width in widths:
+#             mjo_model = gp_mjo(dics, dics_ids, kernel, width, n_iter, sigma_eps,fixed_noise)
+#             mjo_model.train_mjo(Depend=True)
+#             mjo_model.pred_mjo(lead_time=lead_time, n_pred=n_pred, Depend=True)
+#             t.add_rows( [[f'{season}', f'{width}', 'dependent', 
+#                           f'{mjo_model.model.covar_module.base_kernel.lengthscale.detach().numpy()}', 
+#                           f'{mjo_model.model.covar_module.base_kernel.paras.detach().numpy()}']] )
+
+#             # compute errors
+#             mjo_model.obs_extract()
+#             cor_width[width] = mjo_model.cor()
+#             rmse_width[width] = mjo_model.rmse()
+#             phase_err_width[width] = mjo_model.phase_err()
+#             amplitude_err_width[width] = mjo_model.amplitude_err()
+            
+#         cor_n1[n1] = cor_width
+#         rmse_n1[n1] = rmse_width
+#         phase_err_n1[n1] = phase_err_width
+#         amplitude_err_n1[n1] = amplitude_err_width
+    
+#     cor_total_maternblock[season] = cor_n1
+#     rmse_total_maternblock[season] = rmse_n1
+#     phase_err_total_maternblock[season] = phase_err_n1
+#     amplitude_err_total_maternblock[season] = amplitude_err_n1
+
+# maternblock = {'cor': cor_total_maternblock, 'rmse': rmse_total_maternblock, 
+#                      'phase': phase_err_total_maternblock, 'amplitude': amplitude_err_total_maternblock,
+#                      'paras': t.get_string()}
+# dic_pkl = open('../data/preds/season/maternblock.pkl','wb')
+# pickle.dump(maternblock, dic_pkl)
+
+# display(Markdown(rf'$ Block Matern {nu} kernel with dependent RMMs:'))
+# print(t)
