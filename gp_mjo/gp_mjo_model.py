@@ -6,6 +6,9 @@ from gpytorch.constraints import Interval, Positive
 import numpy as np
 import os
 
+from colorama import Fore, Back, Style
+
+
 ## Construct training data and test data for GP 
 def rolling(a:np.ndarray, width) -> np.ndarray:
     """
@@ -70,7 +73,7 @@ class gp_mjo:
         self.errs = {key: None for key in errlist}
 
     ## Training the model
-    def train_mjo(self, data_name=None, Depend=False):
+    def train_mjo(self, data_name=None, Depend=False, season=False):
 
         dics = self.dics
         kernel = self.kernel
@@ -79,18 +82,37 @@ class gp_mjo:
         sigma_eps = self.sigma_eps
         fixed_noise = self.fixed_noise
 
-        if Depend:
-            input_x1 = np.vstack( ( rolling(dics['RMM1']['train1'][:-1], width) , rolling(dics['RMM1']['train2'][:-1], width) ) )
-            output_y1 = np.concatenate( (dics['RMM1']['train1'][width:], dics['RMM1']['train2'][width:]), axis=None )
-            input_x2 = np.vstack( ( rolling(dics['RMM2']['train1'][:-1], width) , rolling(dics['RMM2']['train2'][:-1], width) ) )
-            output_y2 = np.concatenate( (dics['RMM2']['train1'][width:], dics['RMM2']['train2'][width:]), axis=None )
-            
-            input_x = np.vstack( (input_x1,input_x2) )
-            output_y = np.concatenate( (output_y1,output_y2), axis=None )
-        else:
-            # RMM1 and RMM2 are independent
-            input_x = np.vstack( ( rolling(dics[data_name]['train1'][:-1], width) , rolling(dics[data_name]['train2'][:-1], width) ) )
-            output_y = np.concatenate( (dics[data_name]['train1'][width:], dics[data_name]['train2'][width:]), axis=None )
+        print(Back.WHITE + Fore.BLACK + 'start preparing for training...' + Style.RESET_ALL)
+        input_x = np.array([]).reshape((-1,width))
+        output_y = np.array([])
+        rmms = ['RMM1','RMM2'] if Depend else [data_name]
+        for rmm in rmms:
+            for train_set in ['train1', 'train2']:
+                if season:
+                    train_id_split = np.hstack( ( np.array([0]), 
+                                np.where(np.ediff1d(dics['id'][train_set]) != 1 )[0]+1, 
+                                np.array([len(dics['id'][train_set])]) ) )
+                    diff_train_ids = np.ediff1d(train_id_split)
+                    for i, diff_train_id in enumerate(diff_train_ids):
+                        if diff_train_id <= width:
+                            print(f'width = {width} is greater than the current interval width {diff_train_id}, will skip {i}-th iteration in {train_set} for {rmm}')
+                            continue
+                        split_start = train_id_split[i]
+                        split_end = train_id_split[i+1]
+                        train_i = dics[rmm][train_set][split_start:split_end]
+                else:
+                    train_i = dics[rmm][train_set] 
+
+                input_x = np.vstack(( input_x, rolling(train_i[:-1],width) ))
+                output_y = np.concatenate( (output_y, train_i[width:]), axis=None)
+        print(Back.WHITE + Fore.BLACK + 'training data setting is done.' + Style.RESET_ALL)
+        print() 
+        print('data is trained on 4 seasons resepectively') if season else print('data is trained on the entire dataset') 
+        print('RMM1 and RMM2 are' + Fore.GREEN + ' dependent' + Style.RESET_ALL + ', input data incorporate RMM1 and RMM2') if Depend else print('RMM1 and RMM2 are' + Fore.GREEN + ' independent' + Style.RESET_ALL + f', input data only incorporate {data_name}')
+        print(f'the width of the rolling window is {width}')
+        print('the shape of the' + Fore.GREEN + ' input/predictor ' + Style.RESET_ALL + f'is {input_x.shape}')
+        print('the shape of the' + Fore.GREEN + ' observation ' + Style.RESET_ALL + f'is {output_y.shape}')
+        print()
 
         train_x = torch.from_numpy(input_x).float()
         train_y = torch.from_numpy(output_y).float()
@@ -106,6 +128,8 @@ class gp_mjo:
         # this is for running the notebook in our testing framework
         smoke_test = ('CI' in os.environ)
         training_iter = 2 if smoke_test else n_iter
+
+        print(Back.YELLOW + Fore.BLACK + 'start training...' + Style.RESET_ALL)
 
         # find optimal model hyperparameters
         model.train()
@@ -137,101 +161,105 @@ class gp_mjo:
         self.model = model
         self.likelihood = likelihood
 
+        print(Back.YELLOW + Fore.BLACK + 'training step is done.' + Style.RESET_ALL)
+        print()
 
     ## Make predictions with the model
-    def pred_mjo(self, data_name=None, lead_time=None, n_pred=1, Depend=False):
+    def pred_mjo(self, data_name=None, lead_time=None, n_pred=1, Depend=False, season=False):
 
         model = self.model
         likelihood = self.likelihood
         dics = self.dics
         width = self.width
 
-        if Depend or data_name is None:
-            if lead_time is None or n_pred == 1:
-                lead_time = len(dics['RMM1']['test']) - width
-            observed_preds={}
-            lower_confs = {}
-            upper_confs = {}
-            for rmm in ['RMM1', 'RMM2']:
-                observed_preds[rmm] = np.zeros((n_pred,lead_time))
-                lower_confs[rmm] = np.zeros((n_pred,lead_time))
-                upper_confs[rmm] = np.zeros((n_pred,lead_time))
-            for i in range(n_pred):
-                for j in range(lead_time):
-                    if j == 0:
-                        input_x1 = dics['RMM1']['test'][j+i:width+j+i]
-                        input_x2 = dics['RMM2']['test'][j+i:width+j+i]
-                        input_x = np.vstack((input_x1, input_x2))
-                    else:
-                        t_last_pred_x1 = observed_preds['RMM1'][i,j-1]
-                        temp_x1 = input_x1[1:]
-                        input_x1 = np.hstack((temp_x1,t_last_pred_x1))
-                        
-                        t_last_pred_x2 = observed_preds['RMM2'][i,j-1]
-                        temp_x2 = input_x2[1:]
-                        input_x2 = np.hstack((temp_x2,t_last_pred_x2))
+        print(Back.WHITE + Fore.BLACK + 'start preparing for testing...' + Style.RESET_ALL)
+        test_id_split = np.hstack( ( np.array([0]), 
+                            np.where(np.ediff1d(dics['id']['test']) != 1 )[0]+1, 
+                            np.array([len(dics['id']['test'])]) ) )
+        diff_test_ids = np.ediff1d(test_id_split)
+        max_diff = np.max(diff_test_ids)
+        freq_diff = np.bincount(diff_test_ids).argmax() # return the most frequent value in diff_test_ids
 
-                        input_x = np.vstack((input_x1, input_x2))
-                    
-                    test_x = torch.from_numpy(input_x.reshape((2, width))).float()
-                    # get into evaluation (predictive posterior) mode
-                    model.eval()
-                    likelihood.eval()
-
-                    # make predictions by feeding model through likelihood
-                    with torch.no_grad(), gpytorch.settings.fast_pred_var():
-                        observed_pred = likelihood(model(test_x))
-                        lower, upper = observed_pred.confidence_region()
-                        
-                        for k, rmm in enumerate(['RMM1','RMM2']):
-                            observed_preds[rmm][i,j] = observed_pred.mean.numpy()[k]
-                            lower_confs[rmm][i,j] = lower.detach().numpy()[k]
-                            upper_confs[rmm][i,j] = upper.detach().numpy()[k]
+        if lead_time is None or n_pred == 1:
+            lead_time = max_diff - width if season else len(dics['RMM1']['test']) - width
+    
+        if season or len(test_id_split) > 2:
+            freq_diff_id = np.where( diff_test_ids >= freq_diff )[0]
+            pred_ids = test_id_split[freq_diff_id]
+            if width >= freq_diff:
+                raise ValueError(f'the width is greater than the season interval, please try a width value < {freq_diff}')
             
-            self.lead_time = lead_time
-            self.n_pred = n_pred
-            for rmm in ['RMM1','RMM2']:
-                self.preds[rmm] = observed_preds[rmm]
-                self.lconfs[rmm] = lower_confs[rmm]
-                self.uconfs[rmm] = upper_confs[rmm]
-        
+            if n_pred > len(pred_ids):
+                print(f"the number of predictions is greater than the number of the season intervals..., will set n_pred = {len(pred_ids)}")
+                n_pred = len(pred_ids)
+            
+            if lead_time + width > freq_diff:
+                print(f"the sum of the width and lead time is greater than the season interval..., will set lead time = {freq_diff-width}")
+                lead_time = freq_diff-width
         else:
-            if lead_time is None or n_pred == 1:
-                lead_time = len(dics[data_name]['test']) - width
+            pred_ids = np.arange(n_pred)
+        print(Back.WHITE + Fore.BLACK + 'test data setting is done.' + Style.RESET_ALL)
+        print()
+        print('test data incorporate RMM1 and RMM2') if (Depend or data_name is None) else print(f'test data only incorporate {data_name}')
+        print('the number of' + Fore.GREEN + ' predictions ' + Style.RESET_ALL + f'is n_pred = {n_pred}, the' + Fore.GREEN + ' maximal lead time ' + Style.RESET_ALL + f'is lead_time = {lead_time}')
+        print('the shape of the' + Fore.GREEN + ' total observations ' + Style.RESET_ALL + f'is {(n_pred,lead_time)}')
+        print()
 
-            observed_preds = np.zeros((n_pred,lead_time))
-            lower_confs = np.zeros((n_pred,lead_time))
-            upper_confs = np.zeros((n_pred,lead_time))
-            
-            for i in range(n_pred):
-                for j in range(lead_time):
+        print(Back.YELLOW + Fore.BLACK + 'start testing...' + Style.RESET_ALL)
+        obs = {}
+        observed_preds = {}
+        lower_confs = {}
+        upper_confs = {}
+        
+        obs['amplitude'] = np.zeros((n_pred,lead_time))
+        rmms = ['RMM1','RMM2'] if (Depend or data_name is None) else [data_name]
+        for rmm in rmms:
+            obs[rmm] = np.zeros((n_pred,lead_time))
+            observed_preds[rmm] = np.zeros((n_pred,lead_time))
+            lower_confs[rmm] = np.zeros((n_pred,lead_time))
+            upper_confs[rmm] = np.zeros((n_pred,lead_time))
+        
+        for i, pred_i in enumerate(pred_ids):
+            input_x_ij = {}
+            for j in range(lead_time):
+                input_x = np.array([]).reshape((-1,width))
+                obs['amplitude'][i,j] = dics['amplitude']['test'][pred_i+j+width]
+                for rmm in rmms:
+                    obs[rmm][i,j] = dics[rmm]['test'][pred_i+j+width]
                     if j == 0:
-                        input_x = dics[data_name]['test'][j+i:width+j+i]
+                        input_x_ij[rmm] = dics[rmm]['test'][pred_i+j : pred_i+j+width]
                     else:
-                        t_last_pred = observed_preds[i,j-1]
-                        temp = input_x[1:]
-                        input_x = np.hstack((temp,t_last_pred))
+                        t_last_pred_x = observed_preds[rmm][i,j-1]
+                        input_x_ij[rmm] = np.hstack(( input_x_ij[rmm][1:], t_last_pred_x ))
+
+                    input_x = np.vstack((input_x, input_x_ij[rmm]))
                     
-                    test_x = torch.from_numpy(input_x.reshape((1, width))).float()
-                    # get into evaluation (predictive posterior) mode
-                    model.eval()
-                    likelihood.eval()
+                test_x = torch.from_numpy(input_x.reshape((-1, width))).float()
+                # get into evaluation (predictive posterior) mode
+                model.eval()
+                likelihood.eval()
 
-                    # make predictions by feeding model through likelihood
-                    with torch.no_grad(), gpytorch.settings.fast_pred_var():
-                        observed_pred = likelihood(model(test_x))
-                        lower, upper = observed_pred.confidence_region()
+                # make predictions by feeding model through likelihood
+                with torch.no_grad(), gpytorch.settings.fast_pred_var():
+                    observed_pred = likelihood(model(test_x))
+                    lower, upper = observed_pred.confidence_region()
+                
+                for k, rmm in enumerate(rmms):
+                    observed_preds[rmm][i,j] = observed_pred.mean.numpy()[k]
+                    lower_confs[rmm][i,j] = lower.detach().numpy()[k]
+                    upper_confs[rmm][i,j] = upper.detach().numpy()[k]
+        
+        self.lead_time = lead_time
+        self.n_pred = n_pred
+        self.obs['amplitude'] = obs['amplitude']
+        for rmm in rmms:
+            self.obs[rmm] = obs[rmm]
+            self.preds[rmm] = observed_preds[rmm]
+            self.lconfs[rmm] = lower_confs[rmm]
+            self.uconfs[rmm] = upper_confs[rmm]
 
-                        observed_preds[i,j] = observed_pred.mean.numpy()
-                        lower_confs[i,j] = lower.detach().numpy()
-                        upper_confs[i,j] = upper.detach().numpy()
-
-            self.lead_time = lead_time
-            self.n_pred = n_pred
-            self.preds[data_name] = observed_preds
-            self.lconfs[data_name] = lower_confs
-            self.uconfs[data_name] = upper_confs
-
+        print(Back.YELLOW + Fore.BLACK + 'test step is done.' + Style.RESET_ALL) 
+        print()
 
 
     ## Plot the model fit
@@ -288,20 +316,6 @@ class gp_mjo:
         amplitude = np.sqrt( np.square(pred_rmm1) + np.square(pred_rmm2) )
         self.preds['amplitude'] = amplitude
         return amplitude
-
-    def obs_extract(self):
-        dics = self.dics
-        width = self.width
-        lead_time = self.lead_time
-        n_pred = self.n_pred
-
-        rmm1_temp = dics['RMM1']['test'][width: width+lead_time+n_pred-1]
-        rmm2_temp = dics['RMM2']['test'][width: width+lead_time+n_pred-1]
-        amplitude_temp = dics['amplitude']['test'][width: width+lead_time+n_pred-1]
-        
-        self.obs['RMM1'] = rolling(rmm1_temp, lead_time) # n_pred*lead_time numpy array
-        self.obs['RMM2'] = rolling(rmm2_temp, lead_time) # n_pred*lead_time numpy array
-        self.obs['amplitude'] = rolling(amplitude_temp, lead_time)
 
     
     def cor(self):
@@ -388,10 +402,12 @@ class gp_mjo:
 # spring_ids = np.where( (npz_month==3) | (npz_month==4) | (npz_month==5) )[0]
 # summer_ids = np.where( (npz_month==6) | (npz_month==7) | (npz_month==8) )[0]
 # fall_ids = np.where( (npz_month==9) | (npz_month==10) | (npz_month==11) )[0]
+
 # seasons = ['winter','spring','summer','fall']
 # seasons_ids = [winter_ids, spring_ids, summer_ids, fall_ids]
 # data_names = npzfile.files
-# n_files = len(npzfile.files)
+# data_names.append('id')
+# n_files = len(data_names)
 
 # season_datas = {}
 # for j in range(4):
@@ -400,32 +416,36 @@ class gp_mjo:
 
 #     new_datas = [0]*n_files
 #     for i in range(n_files):
-#         new_datas[i] = npzfile[data_names[i]][season_id]
+#         if i < n_files-1:
+#             new_datas[i] = npzfile[data_names[i]][season_id]
+#         if i == n_files-1:
+#             new_datas[i] = seasons_ids[j]
 
 #     season_datas[season] = new_datas
 
-#     ## Set initial values
+
+# ## Set initial values
 # widths = [40]
 # n_iter = 200
 # sigma_eps = 0.01
 # fixed_noise = False
 
 # Ns = [len(winter_ids),len(spring_ids),len(summer_ids),len(fall_ids)]# the total number of days in new dataset
-# n = 100 # the number of days for training
+# n = 2000 # the number of days for training
 # c = 365 # the number of dropped buffer set
 # ms = [N-n-c for N in Ns] # the number of days for testing
 
 
 # n_cv = 1 # the number of operations for cross-validation
 # n1s  = [random.randint(0,n) for i in range(n_cv)]
-# n1s = [2165]
+# n1s = [1165]
 
 # ## Set the kernel of GP
 # nu = 0.5 # 1.5,2.5.... smoothness parameter of Matern kernel
 # d = 1 # d = width or d = 1
 # kernel = gpytorch.kernels.MaternKernel(nu=nu, ard_num_dims=d)
 
-# lead_time = 6
+# lead_time = 60
 # n_pred = 20 # 14*365
 
 # from IPython.display import display, Markdown
@@ -443,7 +463,9 @@ class gp_mjo:
 # t = PrettyTable(["season", "width", "RMMs", "lengthscale", "parameter"])
 
 # for m, season in zip(ms,seasons):
-
+#     print(Back.RED + Fore.BLUE + '=======================================' + Style.RESET_ALL)
+#     print(Back.RED + Fore.BLUE + f'train and test for the season = {season}:' + Style.RESET_ALL)
+#     print(Back.RED + Fore.BLUE + '=======================================' + Style.RESET_ALL)
 #     cor_n1 = {}
 #     rmse_n1 = {}
 #     phase_err_n1 = {}
@@ -458,14 +480,13 @@ class gp_mjo:
 #         amplitude_err_width = {}
 #         for width in widths:
 #             mjo_model = gp_mjo(dics, dics_ids, kernel, width, n_iter, sigma_eps,fixed_noise)
-#             mjo_model.train_mjo(Depend=True)
-#             mjo_model.pred_mjo(lead_time=lead_time, n_pred=n_pred, Depend=True)
+#             mjo_model.train_mjo(Depend=True, season=True)
+#             mjo_model.pred_mjo(lead_time=lead_time, n_pred=n_pred, Depend=True, season=True)
 #             t.add_rows( [[f'{season}', f'{width}', 'dependent', 
 #                           f'{mjo_model.model.covar_module.base_kernel.lengthscale.detach().numpy()}', 
 #                           f'{mjo_model.model.covar_module.base_kernel.paras.detach().numpy()}']] )
 
 #             # compute errors
-#             mjo_model.obs_extract()
 #             cor_width[width] = mjo_model.cor()
 #             rmse_width[width] = mjo_model.rmse()
 #             phase_err_width[width] = mjo_model.phase_err()
@@ -484,8 +505,8 @@ class gp_mjo:
 # maternblock = {'cor': cor_total_maternblock, 'rmse': rmse_total_maternblock, 
 #                      'phase': phase_err_total_maternblock, 'amplitude': amplitude_err_total_maternblock,
 #                      'paras': t.get_string()}
-# dic_pkl = open('../data/preds/season/maternblock.pkl','wb')
-# pickle.dump(maternblock, dic_pkl)
+# # dic_pkl = open('../data/preds/season/maternblock.pkl','wb')
+# # pickle.dump(maternblock, dic_pkl)
 
 # display(Markdown(rf'$ Block Matern {nu} kernel with dependent RMMs:'))
 # print(t)
