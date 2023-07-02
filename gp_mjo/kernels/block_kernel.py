@@ -10,7 +10,7 @@ class CustomBlockKernel(gpytorch.kernels.Kernel):
     has_lengthscale = True
     
     # register the parameter when initializing the kernel
-    def __init__(self, nu=0.5, num_paras = 2, para_upper=2.0,
+    def __init__(self, nu=0.5, num_paras = 2, para_lower = 1e-10, para_upper=2.0,
                  #block_kernel=gpytorch.kernels.MaternKernel(nu=0.5),
                  paras_prior=None, paras_constraint=None,
                  **kwargs):
@@ -24,8 +24,8 @@ class CustomBlockKernel(gpytorch.kernels.Kernel):
         )
         
         if paras_constraint is None:
-            paras_constraint = Interval( torch.zeros(num_paras), para_upper*torch.ones(num_paras) )
-
+            paras_constraint = Interval( para_lower*torch.ones(num_paras), para_upper*torch.ones(num_paras) )
+        
         # register the constraint
         self.register_constraint('raw_paras', paras_constraint)
 

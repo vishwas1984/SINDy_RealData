@@ -1,13 +1,25 @@
-from typing import Optional, Tuple
-from gpytorch.priors import Prior
 import torch
 import gpytorch
-from gpytorch.constraints import Interval, Positive
 import numpy as np
-import os
+import sys, os
 
 from colorama import Fore, Back, Style
 
+
+class SuppressPrints:
+    #different from Alexander`s answer
+    def __init__(self, suppress=True):
+        self.suppress = suppress
+
+    def __enter__(self):
+        if self.suppress:
+            self._original_stdout = sys.stdout
+            sys.stdout = open(os.devnull, 'w')
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.suppress:
+            sys.stdout.close()
+            sys.stdout = self._original_stdout
 
 ## Construct training data and test data for GP 
 def rolling(a:np.ndarray, width) -> np.ndarray:
@@ -73,7 +85,7 @@ class gp_mjo:
         self.errs = {key: None for key in errlist}
 
     ## Training the model
-    def train_mjo(self, data_name=None, Depend=False, season=False):
+    def train_mjo(self, data_name=None, Depend=False, season=False, suppress=True):
 
         dics = self.dics
         kernel = self.kernel
@@ -81,8 +93,9 @@ class gp_mjo:
         n_iter = self.n_iter
         sigma_eps = self.sigma_eps
         fixed_noise = self.fixed_noise
-
-        print(Back.WHITE + Fore.BLACK + 'start preparing for training...' + Style.RESET_ALL)
+       
+        with SuppressPrints(suppress):
+            print(Back.WHITE + Fore.BLACK + 'start preparing for training...' + Style.RESET_ALL)
         input_x = np.array([]).reshape((-1,width))
         output_y = np.array([])
         rmms = ['RMM1','RMM2'] if Depend else [data_name]
@@ -105,14 +118,15 @@ class gp_mjo:
 
                 input_x = np.vstack(( input_x, rolling(train_i[:-1],width) ))
                 output_y = np.concatenate( (output_y, train_i[width:]), axis=None)
-        print(Back.WHITE + Fore.BLACK + 'training data setting is done.' + Style.RESET_ALL)
-        print() 
-        print('data is trained on 4 seasons resepectively') if season else print('data is trained on the entire dataset') 
-        print('RMM1 and RMM2 are' + Fore.GREEN + ' dependent' + Style.RESET_ALL + ', input data incorporate RMM1 and RMM2') if Depend else print('RMM1 and RMM2 are' + Fore.GREEN + ' independent' + Style.RESET_ALL + f', input data only incorporate {data_name}')
-        print(f'the width of the rolling window is {width}')
-        print('the shape of the' + Fore.GREEN + ' input/predictor ' + Style.RESET_ALL + f'is {input_x.shape}')
-        print('the shape of the' + Fore.GREEN + ' observation ' + Style.RESET_ALL + f'is {output_y.shape}')
-        print()
+        with SuppressPrints(suppress):
+            print(Back.WHITE + Fore.BLACK + 'training data setting is done.' + Style.RESET_ALL)
+            print() 
+            print('data is trained on 4 seasons resepectively') if season else print('data is trained on the entire dataset') 
+            print('RMM1 and RMM2 are' + Fore.GREEN + ' dependent' + Style.RESET_ALL + ', input data incorporate RMM1 and RMM2') if Depend else print('RMM1 and RMM2 are' + Fore.GREEN + ' independent' + Style.RESET_ALL + f', input data only incorporate {data_name}')
+            print(f'the width of the rolling window is {width}')
+            print('the shape of the' + Fore.GREEN + ' input/predictor ' + Style.RESET_ALL + f'is {input_x.shape}')
+            print('the shape of the' + Fore.GREEN + ' observation ' + Style.RESET_ALL + f'is {output_y.shape}')
+            print()
 
         train_x = torch.from_numpy(input_x).float()
         train_y = torch.from_numpy(output_y).float()
@@ -128,8 +142,9 @@ class gp_mjo:
         # this is for running the notebook in our testing framework
         smoke_test = ('CI' in os.environ)
         training_iter = 2 if smoke_test else n_iter
-
-        print(Back.YELLOW + Fore.BLACK + 'start training...' + Style.RESET_ALL)
+        
+        with SuppressPrints(suppress):
+            print(Back.YELLOW + Fore.BLACK + 'start training...' + Style.RESET_ALL)
 
         # find optimal model hyperparameters
         model.train()
@@ -161,18 +176,21 @@ class gp_mjo:
         self.model = model
         self.likelihood = likelihood
 
-        print(Back.YELLOW + Fore.BLACK + 'training step is done.' + Style.RESET_ALL)
-        print()
+        with SuppressPrints(suppress):
+            print(Back.YELLOW + Fore.BLACK + 'training step is done.' + Style.RESET_ALL)
+            print()
 
     ## Make predictions with the model
-    def pred_mjo(self, data_name=None, lead_time=None, n_pred=1, Depend=False, season=False):
+    def pred_mjo(self, data_name=None, lead_time=None, n_pred=1, Depend=False, season=False, suppress=True):
 
         model = self.model
         likelihood = self.likelihood
         dics = self.dics
         width = self.width
 
-        print(Back.WHITE + Fore.BLACK + 'start preparing for testing...' + Style.RESET_ALL)
+        with SuppressPrints(suppress):
+            print(Back.WHITE + Fore.BLACK + 'start preparing for testing...' + Style.RESET_ALL)
+        
         test_id_split = np.hstack( ( np.array([0]), 
                             np.where(np.ediff1d(dics['id']['test']) != 1 )[0]+1, 
                             np.array([len(dics['id']['test'])]) ) )
@@ -181,31 +199,41 @@ class gp_mjo:
         freq_diff = np.bincount(diff_test_ids).argmax() # return the most frequent value in diff_test_ids
 
         if lead_time is None or n_pred == 1:
-            lead_time = max_diff - width if season else len(dics['RMM1']['test']) - width
+            lead_time = freq_diff - width if season else len(dics['RMM1']['test']) - width
     
         if season or len(test_id_split) > 2:
-            freq_diff_id = np.where( diff_test_ids >= freq_diff )[0]
-            pred_ids = test_id_split[freq_diff_id]
             if width >= freq_diff:
                 raise ValueError(f'the width is greater than the season interval, please try a width value < {freq_diff}')
-            
-            if n_pred > len(pred_ids):
-                print(f"the number of predictions is greater than the number of the season intervals..., will set n_pred = {len(pred_ids)}")
-                n_pred = len(pred_ids)
-            
             if lead_time + width > freq_diff:
                 print(f"the sum of the width and lead time is greater than the season interval..., will set lead time = {freq_diff-width}")
                 lead_time = freq_diff-width
+            
+            pred_ids_start = test_id_split[:-1]
+            pred_ids_end = (test_id_split - lead_time - width + 1)[1:]
+            pred_ids = np.array([],dtype=int)
+            for ii in range(len(pred_ids_start)):
+                if (pred_ids_start[ii] >= pred_ids_end[ii]):
+                    continue
+                pred_ids_i = np.arange( start=pred_ids_start[ii], stop=pred_ids_end[ii] )
+                pred_ids = np.hstack( (pred_ids,pred_ids_i), dtype=int)
+            
+            if n_pred > len(pred_ids):
+                print(f"the number of predictions is greater than the number of the season intervals..., will set n_pred = {len(pred_ids)}")
+                n_pred = len(pred_ids)            
+            
         else:
             pred_ids = np.arange(n_pred)
-        print(Back.WHITE + Fore.BLACK + 'test data setting is done.' + Style.RESET_ALL)
-        print()
-        print('test data incorporate RMM1 and RMM2') if (Depend or data_name is None) else print(f'test data only incorporate {data_name}')
-        print('the number of' + Fore.GREEN + ' predictions ' + Style.RESET_ALL + f'is n_pred = {n_pred}, the' + Fore.GREEN + ' maximal lead time ' + Style.RESET_ALL + f'is lead_time = {lead_time}')
-        print('the shape of the' + Fore.GREEN + ' total observations ' + Style.RESET_ALL + f'is {(n_pred,lead_time)}')
-        print()
+        
+        with SuppressPrints(suppress):
+            print(Back.WHITE + Fore.BLACK + 'test data setting is done.' + Style.RESET_ALL)
+            print()
+            print('test data incorporate RMM1 and RMM2') if (Depend or data_name is None) else print(f'test data only incorporate {data_name}')
+            print('the number of' + Fore.GREEN + ' predictions ' + Style.RESET_ALL + f'is n_pred = {n_pred}, the' + Fore.GREEN + ' maximal lead time ' + Style.RESET_ALL + f'is lead_time = {lead_time}')
+            print('the shape of the' + Fore.GREEN + ' total observations ' + Style.RESET_ALL + f'is {(n_pred,lead_time)}')
+            print()
 
-        print(Back.YELLOW + Fore.BLACK + 'start testing...' + Style.RESET_ALL)
+            print(Back.YELLOW + Fore.BLACK + 'start testing...' + Style.RESET_ALL)
+        
         obs = {}
         observed_preds = {}
         lower_confs = {}
@@ -257,9 +285,10 @@ class gp_mjo:
             self.preds[rmm] = observed_preds[rmm]
             self.lconfs[rmm] = lower_confs[rmm]
             self.uconfs[rmm] = upper_confs[rmm]
-
-        print(Back.YELLOW + Fore.BLACK + 'test step is done.' + Style.RESET_ALL) 
-        print()
+        
+        with SuppressPrints(suppress):
+            print(Back.YELLOW + Fore.BLACK + 'test step is done.' + Style.RESET_ALL) 
+            print()
 
 
     ## Plot the model fit
