@@ -113,11 +113,13 @@ class gp_mjo:
                         split_start = train_id_split[i]
                         split_end = train_id_split[i+1]
                         train_i = dics[rmm][train_set][split_start:split_end]
+
+                        input_x = np.vstack(( input_x, rolling(train_i[:-1],width) ))
+                        output_y = np.concatenate( (output_y, train_i[width:]), axis=None)
                 else:
                     train_i = dics[rmm][train_set] 
-
-                input_x = np.vstack(( input_x, rolling(train_i[:-1],width) ))
-                output_y = np.concatenate( (output_y, train_i[width:]), axis=None)
+                    input_x = np.vstack(( input_x, rolling(train_i[:-1],width) ))
+                    output_y = np.concatenate( (output_y, train_i[width:]), axis=None)
         with SuppressPrints(suppress):
             print(Back.WHITE + Fore.BLACK + 'training data setting is done.' + Style.RESET_ALL)
             print() 
@@ -247,7 +249,7 @@ class gp_mjo:
             lower_confs[rmm] = np.zeros((n_pred,lead_time))
             upper_confs[rmm] = np.zeros((n_pred,lead_time))
         
-        for i, pred_i in enumerate(pred_ids):
+        for i, pred_i in enumerate(pred_ids[:n_pred]):
             input_x_ij = {}
             for j in range(lead_time):
                 input_x = np.array([]).reshape((-1,width))
