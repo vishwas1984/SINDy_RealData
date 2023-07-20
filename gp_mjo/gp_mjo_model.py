@@ -390,7 +390,7 @@ class gp_mjo:
         n_pred = pred_rmm1.shape[0]
 
         num = obs_rmm1*pred_rmm2 - obs_rmm2*pred_rmm1
-        den = obs_rmm1*pred_rmm1
+        den = obs_rmm1*pred_rmm1 + obs_rmm2*pred_rmm2
 
         temp = np.arctan(np.divide(num,den))
         self.errs['phase'] = ( np.sum(temp, axis=0) / n_pred ).reshape(-1)
