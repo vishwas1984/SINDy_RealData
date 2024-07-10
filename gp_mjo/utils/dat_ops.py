@@ -45,3 +45,35 @@ def dics_divide(new_datas, data_names, n1, m, n, c, fixed_start=False, start_ind
 
 # dics_total = dics_tot_divide(new_datas, data_names, n1s, m, n, c, fixed_start=False, start_index=None, width=None)
 # print(dics_total[n1s[0]]['RMM1']['train1'])
+
+
+
+
+## Construct training data and test data for GP 
+def rolling(a:np.ndarray, width) -> np.ndarray:
+    """
+    convert a = [a_1,...,a_n] to a (n-wid+1)*(wid) matrix with the rolling window
+    a_roll = [a_1,a_2,...,a_{wid};
+              a_2,a_3,...,a_{wid+1};
+              ...;
+              a_{n-wid+1},a_{n-wid+2},...,a_n]
+
+    ------------------------
+    Parameters:
+    a: [a_1,...,a_n], 1*n numpy array
+    width: the width of the rolling window
+
+    ------------------------
+    Returns:
+    a_roll: [a_1,a_2,...,a_{wid};
+             a_2,a_3,...,a_{wid+1};
+             ...;
+             a_{n-wid+1},a_{n-wid+2},...,a_n], is a (n-wid+1)*(wid) numpy array
+    """
+    if a.size == 0:
+        a_roll = a.reshape((-1,width))
+    else:
+        shape = (a.size - width + 1, width) # a.size = np.prod(a.shape)
+        strides = (a.itemsize, a.itemsize) # itemsize returns the memory size of one element in bytes (8 bytes for a float64)
+        a_roll = np.lib.stride_tricks.as_strided(a, shape=shape, strides=strides)
+    return a_roll

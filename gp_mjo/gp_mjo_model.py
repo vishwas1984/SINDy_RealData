@@ -2,8 +2,10 @@ import torch
 import gpytorch
 import numpy as np
 import sys, os
+from .utils.dat_ops import rolling
 
 from colorama import Fore, Back, Style
+
 
 
 class SuppressPrints:
@@ -21,34 +23,6 @@ class SuppressPrints:
             sys.stdout.close()
             sys.stdout = self._original_stdout
 
-## Construct training data and test data for GP 
-def rolling(a:np.ndarray, width) -> np.ndarray:
-    """
-    convert a = [a_1,...,a_n] to a (n-wid+1)*(wid) matrix with the rolling window
-    a_roll = [a_1,a_2,...,a_{wid};
-              a_2,a_3,...,a_{wid+1};
-              ...;
-              a_{n-wid+1},a_{n-wid+2},...,a_n]
-
-    ------------------------
-    Parameters:
-    a: [a_1,...,a_n], 1*n numpy array
-    width: the width of the rolling window
-
-    ------------------------
-    Returns:
-    a_roll: [a_1,a_2,...,a_{wid};
-             a_2,a_3,...,a_{wid+1};
-             ...;
-             a_{n-wid+1},a_{n-wid+2},...,a_n], is a (n-wid+1)*(wid) numpy array
-    """
-    if a.size == 0:
-        a_roll = a.reshape((-1,width))
-    else:
-        shape = (a.size - width + 1, width) # a.size = np.prod(a.shape)
-        strides = (a.itemsize, a.itemsize) # itemsize returns the memory size of one element in bytes (8 bytes for a float64)
-        a_roll = np.lib.stride_tricks.as_strided(a, shape=shape, strides=strides)
-    return a_roll
 
 
 ## Exact GP Inference
