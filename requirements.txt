@@ -11,3 +11,9 @@ matplotlib
 pandas
 scipy
 netCDF4
+torch
+tqdm
+
+gpytorch
+colorama
+prettytable

@@ -1,4 +1,6 @@
+from typing import Union
 import numpy as np
+import torch
 
 def dat_divide(new_data, n1, m, n, c, fixed_start,start_index, width):
     dic = {}
@@ -48,32 +50,34 @@ def dics_divide(new_datas, data_names, n1, m, n, c, fixed_start=False, start_ind
 
 
 
-
-## Construct training data and test data for GP 
-def rolling(a:np.ndarray, width) -> np.ndarray:
+def rolling(a: Union[np.ndarray, torch.Tensor], width: int) -> Union[np.ndarray, torch.Tensor]:
     """
-    convert a = [a_1,...,a_n] to a (n-wid+1)*(wid) matrix with the rolling window
-    a_roll = [a_1,a_2,...,a_{wid};
-              a_2,a_3,...,a_{wid+1};
-              ...;
-              a_{n-wid+1},a_{n-wid+2},...,a_n]
-
+    Convert an array or tensor into a matrix with a rolling window.
+    
     ------------------------
     Parameters:
-    a: [a_1,...,a_n], 1*n numpy array
+    a: 1D numpy array or torch tensor, a = [a_1,...,a_n]
     width: the width of the rolling window
-
+    
     ------------------------
     Returns:
-    a_roll: [a_1,a_2,...,a_{wid};
-             a_2,a_3,...,a_{wid+1};
-             ...;
-             a_{n-wid+1},a_{n-wid+2},...,a_n], is a (n-wid+1)*(wid) numpy array
+    a_roll: 2D numpy array or torch tensor with rolling windows
+    a_roll =  [a_1,a_2,...,a_{wid};
+            a_2,a_3,...,a_{wid+1};
+            ...;
+            a_{n-wid+1},a_{n-wid+2},...,a_n], is a (n-wid+1)*(wid) numpy arrray or tensor
     """
-    if a.size == 0:
-        a_roll = a.reshape((-1,width))
+    if isinstance(a, np.ndarray):
+        if a.size == 0:
+            return a.reshape((-1, width))
+        shape = (a.size - width + 1, width)
+        strides = (a.itemsize, a.itemsize)
+        return np.lib.stride_tricks.as_strided(a, shape=shape, strides=strides)
+    
+    elif isinstance(a, torch.Tensor):
+        if a.numel() == 0:
+            return a.reshape(-1, width)
+        return a.unfold(dimension=0, size=width, step=1) # [n-width+1, width]-size tensor
+
     else:
-        shape = (a.size - width + 1, width) # a.size = np.prod(a.shape)
-        strides = (a.itemsize, a.itemsize) # itemsize returns the memory size of one element in bytes (8 bytes for a float64)
-        a_roll = np.lib.stride_tricks.as_strided(a, shape=shape, strides=strides)
-    return a_roll
+        raise TypeError('Invalid input type')
