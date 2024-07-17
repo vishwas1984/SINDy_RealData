@@ -344,6 +344,7 @@ class EmpGPMJOPred:
         
         palette_colors = plt.get_cmap('tab20').colors  # Use the 'tab20' colormap
         palette_colors = list(mcolors.TABLEAU_COLORS.keys()) # list of Tableau Palette colors
+        palette_colors = [color for color in palette_colors if color != 'tab:gray']# Remove 'tab:gray' from the list
         markers_class = list(MarkerStyle.markers.keys())
 
         fig, axs = plt.subplots(nrows, ncols, figsize=(16*ncols, 12*nrows))
@@ -381,6 +382,8 @@ class EmpGPMJOPred:
             pred_mean['RMM1'] = ensembles['RMM1'].mean(axis=-1) # [n_pred, lead_time], select 'hdate' index as 9 (920, 46)
             pred_mean['RMM2'] = ensembles['RMM2'].mean(axis=-1) # [n_pred, lead_time]
 
+            self.observed_preds['ensembles'] = ensembles
+
             era5_obs = {}
             era5_obs['RMM1'] = s2s_data[dir_name]['ensembles']['RMM1(obs)'][-n_pred:, :] 
             era5_obs['RMM2'] = s2s_data[dir_name]['ensembles']['RMM2(obs)'][-n_pred:, :]
@@ -397,6 +400,7 @@ class EmpGPMJOPred:
                 ensembles['RMM2'] = s2s_data[dir_name]['ensembles_rmm2.nc']['RMM2'][hdate_id][-n_pred:, :, :] # [n_pred, lead_time, num_ensembles]
                 key_name = dir_name + f"_hdate={hdate_id}"
                 self.observed_preds[key_name] = pred_mean
+                self.observed_preds['ensembles'] = ensembles
         else:
             pred_mean = {}
             ensembles = {}
@@ -429,18 +433,39 @@ class EmpGPMJOPred:
             ax = axs[j]
             ax.plot(dates[:self.lead_time], self.obs[self.widths[0]][title_name][pred_id,:], color='black', marker='o', label='Truth')
             for (color, marker, key) in zip(colors, markers, self.observed_preds.keys()):
-                val = self.observed_preds[key][title_name][pred_id, :]
+                val = self.observed_preds[key][title_name][pred_id, ...]
                 lead_time = len(val)
                 tick_positions = dates#np.arange(60+1)
 
-                label = r'$\bf{GP}$' + f"({key})" if isinstance(key, (int, float)) else key
-                ls = '-' if isinstance(key, (int, float)) else '--'
-                lw = 4.0 if isinstance(key, (int, float)) else 3.5
-                alpha = 1.0 if isinstance(key, (int, float)) else 0.9
+                # label = r'$\bf{GP}$' + f"({key})" if isinstance(key, (int, float)) else key
+                # ls = '-' if isinstance(key, (int, float)) else '--'
+                # lw = 4.0 if isinstance(key, (int, float)) else 3.5
+                # alpha = 1.0 if isinstance(key, (int, float)) else 0.95
+
+                if isinstance(key, (int, float)):
+                    label = r'$\bf{GP}$' + f"({key})"
+                    ls = '-'
+                    lw = 4.0
+                    alpha = 1.0
+                    markersize = 10
+                elif key == 'ensembles':
+                    label = key
+                    ls = '-'
+                    lw = 2.5
+                    alpha = 0.55
+                    markersize = 2
+                    color = 'tab:grey'
+                else:
+                    label = key
+                    ls = '--'
+                    lw = 3.5
+                    alpha = 0.95
+                    markersize = 10
+
 
                 ax.plot(dates[:lead_time], val, color=color, 
                         ls=ls, lw=lw, alpha=alpha,
-                        marker=marker, markersize=10, 
+                        marker=marker, markersize=markersize, 
                         label=label)
                 
                 if isinstance(key, (int, float)):
@@ -488,11 +513,18 @@ class EmpGPMJOPred:
         lines, labels = axs[0].get_legend_handles_labels() 
         # lines.extend(line) 
         # labels.extend(label)
-        if dir_name == 'ecmwf':
-            ncol_legend = (num_legends+1) // 2 if num_legends > 3 else (num_legends+1)
-        else:
-            ncol_legend = num_legends + 1
-        fig.legend(lines, labels, fontsize=50, loc='lower center', bbox_to_anchor=(0.53, -0.25),
+
+        unique_labels = {}
+        lines, labels = axs[0].get_legend_handles_labels()
+        for line, label in zip(lines, labels):
+            if label not in unique_labels:
+                unique_labels[label] = line
+        # Prepare the final lines and labels for the legend
+        final_lines = list(unique_labels.values())
+        final_labels = list(unique_labels.keys())
+        
+        ncol_legend = 4 if (num_legends+1) > 5 else (num_legends+1)
+        fig.legend(final_lines, final_labels, fontsize=50, loc='lower center', bbox_to_anchor=(0.53, -0.25),
                     ncol=ncol_legend , fancybox=True, shadow=True)
 
         parent_dir_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # ../SINDy_RealData
