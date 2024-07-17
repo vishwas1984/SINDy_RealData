@@ -7,7 +7,7 @@ import pickle
 # Function to read and process all txt files in a given folder
 def process_folder(subfolder_path):
     # Columns to ignore
-    ignore_columns = ["RMM1(0)", "RMM2(0)", "RMM1_0", "RMM2_0"]
+    ignore_columns = []#["RMM1(0)", "RMM2(0)", "RMM1_0", "RMM2_0"]
 
 
     # List to hold dataframes for each txt file
@@ -29,9 +29,16 @@ def process_folder(subfolder_path):
                 
                 # Add lead_time column
                 df['lead_time'] = lead_time
+
+                if "RMM1_0" in df.columns:
+                    df.rename(columns={"RMM1_0": "RMM1(0)"}, inplace=True)
+                if "RMM2_0" in df.columns:
+                    df.rename(columns={"RMM2_0": "RMM2(0)"}, inplace=True)
                 
                 # Append the dataframe to the list
                 dataframes.append(df)
+
+                
     
     # Concatenate all dataframes into one for the subfolder
     if dataframes:
@@ -41,8 +48,15 @@ def process_folder(subfolder_path):
         combined_df['Date_day0'] = pd.to_datetime(combined_df['Date_day0'], format='%Y-%m-%d')
         combined_df['S'] = (combined_df['Date_day0'] + timedelta(days=1) - datetime(1979, 1, 1)).dt.days
 
+        # Add Amplitude(0)
+        if "RMM1(0)" in combined_df.columns and "RMM2(0)" in combined_df.columns:
+            combined_df['Amplitude(0)'] = np.sqrt(combined_df["RMM1(0)"]**2 + combined_df["RMM2(0)"]**2)
+        elif "RMM1_0" in combined_df.columns and "RMM2_0" in combined_df.columns:
+            combined_df['Amplitude(0)'] = np.sqrt(combined_df["RMM1_0"]**2 + combined_df["RMM2_0"]**2)
+
         # Sort by Date_day0 and lead_time
         combined_df.sort_values(by=['Date_day0', 'lead_time'], inplace=True)
+        
         return combined_df
     else:
         print(f"No .txt files found in subfolder: {subfolder_path}")
@@ -88,7 +102,19 @@ def creat_dict(folder_path):
                     dataframes_dict[subfolder_key] = combined_arrays
                 else:
                     dataframes_dict[subfolder] = df
-                print(f"Processed dataframe for subfolder: {subfolder}")
+            
+            # Process Results files
+            for file in os.listdir(subfolder_path):
+                if file.startswith("Results"):
+                    file_path = os.path.join(subfolder_path, file)
+                    df_results = pd.read_csv(file_path, sep=',', engine='python')
+                    if "Bivariate Correlation" in df_results.columns:
+                        df_results.rename(columns={"Bivariate Correlation": "COR"}, inplace=True)
+                    for col in df_results:
+                        combined_arrays[col] = df_results[col].to_numpy()
+                    dataframes_dict[subfolder] = combined_arrays
+            
+            print(f"Processed dataframe for subfolder: {subfolder}")
 
     print("Processing completed!")
 
@@ -105,7 +131,8 @@ def save(dataframes_dict, folder_path):
     # Filter the dataframes to keep only rows with common 'S' values
     def filter_by_common_S(data, common_S):
         mask = np.isin(data['S'][:, 0], common_S)
-        filtered_data = {k: v[mask] for k, v in data.items()}
+        ignore_keys = ['COR', 'RMSE', 'Err Amp', 'Err Phase', 'CRPS']
+        filtered_data = {k: v[mask] for k, v in data.items() if k not in ignore_keys}
         return filtered_data
 
     filtered_ensemble_mean = filter_by_common_S(dataframes_dict['ensemble_mean'], common_S_values)

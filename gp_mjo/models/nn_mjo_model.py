@@ -74,19 +74,19 @@ class NNMJO:
         hidden_dim = kwargs.get('hidden_dim', 64)
         num_epochs = kwargs.get('num_epochs', 10)
         lr = kwargs.get('lr', 0.1)
-        
+        seed = kwargs.get('seed', 99)
 
         train_x, train_y = train_dataset.tensors
         input_dim = train_x.size(1)
         output_dim = train_y.size(1)
 
         # Use batch size of 16
-        train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
-        val_loader = DataLoader(val_dataset, batch_size=16, shuffle=True)
+        train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, generator=torch.Generator().manual_seed(seed))
+        val_loader = DataLoader(val_dataset, batch_size=16, shuffle=True, generator=torch.Generator().manual_seed(seed))
         best_val_loss = float('inf')  # Initialize with a very large value
 
         # Initialize the model
-        model = model_cls(input_dim=input_dim, hidden_dim=hidden_dim, output_dim=output_dim)
+        model = model_cls(input_dim=input_dim, hidden_dim=hidden_dim, output_dim=output_dim, seed=seed)
 
         # Define optimizer
         optimizer = torch.optim.Adam(model.parameters(), lr=lr)
