@@ -155,7 +155,7 @@ class EmpGPMJOPred:
             
                 start_date_ids = s2s_data[dir_name]['ensemble_mean']['S'][:,0]
 
-            elif dir_name == 'ecmwf':
+            elif dir_name in ['ecmwf', 'eccc']:
                 
                 pred_mean_rmm1 = s2s_data[dir_name]['ensemble_mean_rmm1.nc']['RMM1'][hdate_id][-n_pred:, :] # [n_pred, lead_time], select 'hdate' index as 9 (920, 46)
                 pred_mean_rmm2 = s2s_data[dir_name]['ensemble_mean_rmm2.nc']['RMM2'][hdate_id][-n_pred:, :] # [n_pred, lead_time]
@@ -277,7 +277,7 @@ class EmpGPMJOPred:
                 if isinstance(key, (int, float)):
                     label = r'$\bf{GP}$' + f"({key})"
                 elif key == 'ecmwf_txt':
-                    label = f"{key.upper()}(with ERA5)" if self.era5_obs else f"{key}(with BOM)"
+                    label = f"{key.upper()}(with ERA5)" if self.era5_obs else f"{key.upper()}(with BOM)"
                 else:
                     label = key.upper()
                 ls = '-' if isinstance(key, (int, float)) else '--'
@@ -382,14 +382,15 @@ class EmpGPMJOPred:
             pred_mean['RMM1'] = ensembles['RMM1'].mean(axis=-1) # [n_pred, lead_time], select 'hdate' index as 9 (920, 46)
             pred_mean['RMM2'] = ensembles['RMM2'].mean(axis=-1) # [n_pred, lead_time]
 
-            self.observed_preds['ensembles'] = ensembles
+            self.observed_preds[dir_name.upper()] = pred_mean
+            self.observed_preds['Ensembles'] = ensembles
 
             era5_obs = {}
             era5_obs['RMM1'] = s2s_data[dir_name]['ensembles']['RMM1(obs)'][-n_pred:, :] 
             era5_obs['RMM2'] = s2s_data[dir_name]['ensembles']['RMM2(obs)'][-n_pred:, :]
             self.observed_preds['ERA5(obs)'] = era5_obs
             
-        elif dir_name == 'ecmwf':
+        elif dir_name in ['ecmwf', 'eccc']:
             for hdate_id in hdate_ids:
                 pred_mean = {}
                 ensembles = {}
@@ -398,9 +399,10 @@ class EmpGPMJOPred:
 
                 ensembles['RMM1'] = s2s_data[dir_name]['ensembles_rmm1.nc']['RMM1'][hdate_id][-n_pred:, :, :] # [n_pred, lead_time, num_ensembles]
                 ensembles['RMM2'] = s2s_data[dir_name]['ensembles_rmm2.nc']['RMM2'][hdate_id][-n_pred:, :, :] # [n_pred, lead_time, num_ensembles]
-                key_name = dir_name + f"_hdate={hdate_id}"
+                key_name = dir_name.upper() + f"_hdate={hdate_id}"
                 self.observed_preds[key_name] = pred_mean
-                self.observed_preds['ensembles'] = ensembles
+                if hdate_id == hdate_ids[-1]:
+                    self.observed_preds['Ensembles'+f"_hdate={hdate_id}"] = ensembles
         else:
             pred_mean = {}
             ensembles = {}
@@ -409,7 +411,8 @@ class EmpGPMJOPred:
                 
             ensembles['RMM1'] = s2s_data[dir_name]['ensembles_rmm1.nc']['RMM1'][-n_pred:, :, :]
             ensembles['RMM2'] = s2s_data[dir_name]['ensembles_rmm2.nc']['RMM2'][-n_pred:, :, :]
-        self.observed_preds[dir_name] = pred_mean
+            self.observed_preds[dir_name.upper()] = pred_mean
+            self.observed_preds['Ensembles'] = ensembles
 
         num_legends = len(self.observed_preds.keys())
         # colors = palette_colors[0 : 0 + num_legends*2 : 2]
@@ -448,13 +451,13 @@ class EmpGPMJOPred:
                     lw = 4.0
                     alpha = 1.0
                     markersize = 10
-                elif key == 'ensembles':
-                    label = key
+                elif 'Ensembles' in key:
+                    label = 'Ensembles'
                     ls = '-'
                     lw = 2.5
                     alpha = 0.55
                     markersize = 2
-                    color = 'tab:grey'
+                    color = 'tab:gray'
                 else:
                     label = key
                     ls = '--'
