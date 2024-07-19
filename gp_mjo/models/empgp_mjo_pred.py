@@ -80,20 +80,21 @@ class EmpGPMJOPred:
             #start_tests[width] = start_vals[width] + n_vals[width] + n_offset
             self.start_tests[width] = self.start_train + max(self.widths) + self.n + self.n_offset + max(self.widths) \
                 + self.v + self.n_offset + 10 + max(self.widths) - width
-            if test_ids is None:
+            if test_on_choose_dir:
                 if self.choose_dir_name == 'ecmwf_txt':
-                    start_dates = s2s_data[self.choose_dir_name]['ensemble_mean']['S'][-self.n_pred :, 0]
+                    start_dates = s2s_data[self.choose_dir_name]['ensemble_mean']['S'][:self.n_pred, 0]
                 else:
-                    start_dates = s2s_data[self.choose_dir_name]['ensemble_mean_rmm1.nc']['S'][-self.n_pred : ]
+                    start_dates = s2s_data[self.choose_dir_name]['ensemble_mean_rmm1.nc']['S'][ : self.n_pred]
                 self.test_ids[width] = start_dates - width
             else:
-                self.test_ids[width] = test_ids - width
+                if test_ids is not None:
+                    self.test_ids[width] = test_ids - width
 
             emp_model = EmpGPMJO(npzfile=npzfile, width=width, lead_time=self.lead_time, n=self.n, start_train=self.start_train)
             emp_model.get_emp()
             emp_model.get_biasvar(start_val=self.start_vals[width], n_pred=365*4, v=self.v, season_bool=False)
             if test_on_choose_dir:
-                emp_model.pred(test_ids=self.test_ids[width], n_pred=self.n_pred, m=self.m, season_bool=False) # test on the same dates as choose_dir_name
+                emp_model.pred(test_ids=self.test_ids[width], n_pred=len(start_dates), m=self.m, season_bool=False) # test on the same dates as choose_dir_name
             else:
                 emp_model.pred(start_test=self.start_tests[width], n_pred=self.n_pred, m=self.m, season_bool=False) # test on the consecutive dates
 
@@ -117,13 +118,14 @@ class EmpGPMJOPred:
             self.emp_model = emp_model
     
 
-    def add_s2s(self, dir_names, hdate_id=19, era5_obs=True):
+    def add_s2s(self, dir_names, hdate_id=19, era5_obs=True, n_pred=None):
         
         self.era5_obs = era5_obs
         npzfile = self.npzfile
         s2s_data = self.s2s_data
-        n_pred = self.n_pred
         emp_model = self.emp_model
+        if n_pred is None:
+            n_pred = self.n_pred
 
         for dir_name in dir_names:
             if dir_name == 'ecmwf_txt':
@@ -139,8 +141,8 @@ class EmpGPMJOPred:
                 # pred_mean_rmm1 = s2s_data[dir_name]['ensemble_mean']['RMM1(forecast)'][-n_pred:, :lead_time] # [n_pred, lead_time], select 'hdate' index as 9 (920, 46)
                 # pred_mean_rmm2 = s2s_data[dir_name]['ensemble_mean']['RMM2(forecast)'][-n_pred:, :lead_time] # [n_pred, lead_time]
 
-                ensembles_rmm1 = s2s_data[dir_name]['ensembles']['RMM1(forecast)'][-n_pred:, :lead_time, :] # [n_pred, lead_time, num_ensembles]
-                ensembles_rmm2 = s2s_data[dir_name]['ensembles']['RMM2(forecast)'][-n_pred:, :lead_time, :] # [n_pred, lead_time, num_ensembles]
+                ensembles_rmm1 = s2s_data[dir_name]['ensembles']['RMM1(forecast)'][:n_pred, :lead_time, :] # [n_pred, lead_time, num_ensembles]
+                ensembles_rmm2 = s2s_data[dir_name]['ensembles']['RMM2(forecast)'][:n_pred, :lead_time, :] # [n_pred, lead_time, num_ensembles]
 
                 pred_mean_rmm1 = ensembles_rmm1.mean(axis=-1) # [n_pred, lead_time], select 'hdate' index as 9 (920, 46)
                 pred_mean_rmm2 = ensembles_rmm2.mean(axis=-1) # [n_pred, lead_time]
@@ -157,11 +159,11 @@ class EmpGPMJOPred:
 
             elif dir_name in ['ecmwf', 'eccc']:
                 
-                pred_mean_rmm1 = s2s_data[dir_name]['ensemble_mean_rmm1.nc']['RMM1'][hdate_id][-n_pred:, :] # [n_pred, lead_time], select 'hdate' index as 9 (920, 46)
-                pred_mean_rmm2 = s2s_data[dir_name]['ensemble_mean_rmm2.nc']['RMM2'][hdate_id][-n_pred:, :] # [n_pred, lead_time]
+                pred_mean_rmm1 = s2s_data[dir_name]['ensemble_mean_rmm1.nc']['RMM1'][hdate_id][:n_pred, :] # [n_pred, lead_time], select 'hdate' index as 9 (920, 46)
+                pred_mean_rmm2 = s2s_data[dir_name]['ensemble_mean_rmm2.nc']['RMM2'][hdate_id][:n_pred, :] # [n_pred, lead_time]
 
-                ensembles_rmm1 = s2s_data[dir_name]['ensembles_rmm1.nc']['RMM1'][hdate_id][-n_pred:, :, :] # [n_pred, lead_time, num_ensembles]
-                ensembles_rmm2 = s2s_data[dir_name]['ensembles_rmm2.nc']['RMM2'][hdate_id][-n_pred:, :, :] # [n_pred, lead_time, num_ensembles]
+                ensembles_rmm1 = s2s_data[dir_name]['ensembles_rmm1.nc']['RMM1'][hdate_id][:n_pred, :, :] # [n_pred, lead_time, num_ensembles]
+                ensembles_rmm2 = s2s_data[dir_name]['ensembles_rmm2.nc']['RMM2'][hdate_id][:n_pred, :, :] # [n_pred, lead_time, num_ensembles]
 
                 pred_std_rmm1 = ensembles_rmm1.std(axis=-1) # [n_pred, lead_time]
                 pred_std_rmm2 = ensembles_rmm2.std(axis=-1) # [n_pred, lead_time]
@@ -170,14 +172,14 @@ class EmpGPMJOPred:
                 ensembles_rmm2_norm = ensembles_rmm2 - ensembles_rmm2.mean(axis=-1)[..., None] # [n_pred, lead_time, num_ensembles]
                 pred_crosscov = np.multiply(ensembles_rmm1_norm, ensembles_rmm2_norm).mean(axis=-1) # [n_pred, lead_time]
 
-                start_date_ids = s2s_data[dir_name]['ensemble_mean_rmm1.nc']['S'][-n_pred:]
+                start_date_ids = s2s_data[dir_name]['ensemble_mean_rmm1.nc']['S'][:n_pred]
 
             else:
-                pred_mean_rmm1 = s2s_data[dir_name]['ensemble_mean_rmm1.nc']['RMM1'][-n_pred:, :] 
-                pred_mean_rmm2 = s2s_data[dir_name]['ensemble_mean_rmm2.nc']['RMM2'][-n_pred:, :]
+                pred_mean_rmm1 = s2s_data[dir_name]['ensemble_mean_rmm1.nc']['RMM1'][:n_pred, :] 
+                pred_mean_rmm2 = s2s_data[dir_name]['ensemble_mean_rmm2.nc']['RMM2'][:n_pred, :]
                 
-                ensembles_rmm1 = s2s_data[dir_name]['ensembles_rmm1.nc']['RMM1'][-n_pred:, :, :]
-                ensembles_rmm2 = s2s_data[dir_name]['ensembles_rmm2.nc']['RMM2'][-n_pred:, :, :]
+                ensembles_rmm1 = s2s_data[dir_name]['ensembles_rmm1.nc']['RMM1'][:n_pred, :, :]
+                ensembles_rmm2 = s2s_data[dir_name]['ensembles_rmm2.nc']['RMM2'][:n_pred, :, :]
                 pred_std_rmm1 = ensembles_rmm1.std(axis=-1)
                 pred_std_rmm2 = ensembles_rmm2.std(axis=-1)
 
@@ -185,15 +187,16 @@ class EmpGPMJOPred:
                 ensembles_rmm2_norm = ensembles_rmm2 - ensembles_rmm2.mean(axis=-1)[..., None]
                 pred_crosscov = np.multiply(ensembles_rmm1_norm, ensembles_rmm2_norm).mean(axis=-1)
 
-                start_date_ids = s2s_data[dir_name]['ensemble_mean_rmm1.nc']['S'][-n_pred:]
+                start_date_ids = s2s_data[dir_name]['ensemble_mean_rmm1.nc']['S'][:n_pred]
             
             if dir_name == 'ecmwf_txt' and era5_obs:
-                obs_rmm1 = s2s_data[dir_name]['ensembles']['RMM1(obs)'][-n_pred:, :lead_time]
-                obs_rmm2 = s2s_data[dir_name]['ensembles']['RMM2(obs)'][-n_pred:, :lead_time]
+                obs_rmm1 = s2s_data[dir_name]['ensembles']['RMM1(obs)'][:n_pred, :lead_time]
+                obs_rmm2 = s2s_data[dir_name]['ensembles']['RMM2(obs)'][:n_pred, :lead_time]
             else:
-                obs_rmm1 = np.zeros((n_pred, lead_time))
-                obs_rmm2 = np.zeros((n_pred, lead_time))
-                for i in range(n_pred):
+                n_pred_min = n_pred if n_pred <= len(pred_mean_rmm1) else len(pred_mean_rmm1)
+                obs_rmm1 = np.zeros((n_pred_min, lead_time))
+                obs_rmm2 = np.zeros((n_pred_min, lead_time))
+                for i in range(n_pred_min):
                     start_date_id = start_date_ids[i]
                     obs_rmm1[i,:] = npzfile['RMM1'][start_date_id : start_date_id+lead_time]
                     obs_rmm2[i,:] = npzfile['RMM2'][start_date_id : start_date_id+lead_time]
@@ -277,7 +280,7 @@ class EmpGPMJOPred:
                 if isinstance(key, (int, float)):
                     label = r'$\bf{GP}$' + f"({key})"
                 elif key == 'ecmwf_txt':
-                    label = f"{key.upper()}(with ERA5)" if self.era5_obs else f"{key.upper()}(with BOM)"
+                    label = f"ECMWF (with ERA5)" if self.era5_obs else f"ECMWF"
                 else:
                     label = key.upper()
                 ls = '-' if isinstance(key, (int, float)) else '--'
@@ -337,7 +340,8 @@ class EmpGPMJOPred:
         plt.show()
     
     
-    def plot_ts(self, nrows=1, ncols=2, hdate_ids=[9, 12, 15, 19], pred_id=0):
+    def plot_ts(self, nrows=1, ncols=2, hdate_ids=[9, 12, 15, 19], 
+                pred_id=0, n_pred=None, plot_ensembles=False):
         plt.rc('xtick', labelsize=30)  # fontsize of the tick labels
         plt.rc('ytick', labelsize=35)  # fontsize of the tick labels
         plt.rcParams['lines.linewidth'] = 3.0 # Change linewidth of plots
@@ -351,13 +355,14 @@ class EmpGPMJOPred:
 
         s2s_data = self.s2s_data
         dir_name = self.choose_dir_name
-        n_pred = self.n_pred
+        if n_pred is None:
+            n_pred = self.n_pred
         if dir_name == 'ecmwf_txt':
             s2s_lead_time = s2s_data[dir_name]['ensemble_mean']['RMM1(forecast)'].shape[-1]
-            s2s_test_ids = s2s_data[dir_name]['ensemble_mean']['S'][-n_pred:,0]
+            s2s_test_ids = s2s_data[dir_name]['ensemble_mean']['S'][:n_pred,0]
         else:
             s2s_lead_time = s2s_data[dir_name]['ensemble_mean_rmm1.nc']['RMM1'].shape[-1]
-            s2s_test_ids = s2s_data[dir_name]['ensemble_mean_rmm1.nc']['S'][-n_pred:]
+            s2s_test_ids = s2s_data[dir_name]['ensemble_mean_rmm1.nc']['S'][:n_pred]
         
         max_lead_time = max( self.lead_time,  s2s_lead_time)
 
@@ -372,47 +377,75 @@ class EmpGPMJOPred:
 
         if dir_name == 'ecmwf_txt':
             pred_mean = {}
+            pred_lower = {}
+            pred_upper = {}
             ensembles = {}
             # pred_mean['RMM1'] = s2s_data[dir_name]['ensemble_mean']['RMM1(forecast)'][-n_pred:, :] # [n_pred, lead_time], select 'hdate' index as 9 (920, 46)
             # pred_mean['RMM2'] = s2s_data[dir_name]['ensemble_mean']['RMM2(forecast)'][-n_pred:, :] # [n_pred, lead_time]
 
-            ensembles['RMM1'] = s2s_data[dir_name]['ensembles']['RMM1(forecast)'][-n_pred:, :, :] # [n_pred, lead_time, num_ensembles]
-            ensembles['RMM2'] = s2s_data[dir_name]['ensembles']['RMM2(forecast)'][-n_pred:, :, :] # [n_pred, lead_time, num_ensembles]
+            ensembles['RMM1'] = s2s_data[dir_name]['ensembles']['RMM1(forecast)'][:n_pred, :, :] # [n_pred, lead_time, num_ensembles]
+            ensembles['RMM2'] = s2s_data[dir_name]['ensembles']['RMM2(forecast)'][:n_pred, :, :] # [n_pred, lead_time, num_ensembles]
 
             pred_mean['RMM1'] = ensembles['RMM1'].mean(axis=-1) # [n_pred, lead_time], select 'hdate' index as 9 (920, 46)
             pred_mean['RMM2'] = ensembles['RMM2'].mean(axis=-1) # [n_pred, lead_time]
 
-            self.observed_preds[dir_name.upper()] = pred_mean
-            self.observed_preds['Ensembles'] = ensembles
+            self.observed_preds[dir_name] = pred_mean
+            for rmm in ['RMM1', 'RMM2']:
+                pred_std = ensembles[rmm].std(axis=-1)
+                pred_lower[rmm] = pred_mean[rmm] - pred_std
+                pred_upper[rmm] = pred_mean[rmm] + pred_std
+            self.lower_confs[dir_name] = pred_lower
+            self.upper_confs[dir_name] = pred_upper
+
+            if plot_ensembles:
+                self.observed_preds['ensembles'] = ensembles
 
             era5_obs = {}
-            era5_obs['RMM1'] = s2s_data[dir_name]['ensembles']['RMM1(obs)'][-n_pred:, :] 
-            era5_obs['RMM2'] = s2s_data[dir_name]['ensembles']['RMM2(obs)'][-n_pred:, :]
+            era5_obs['RMM1'] = s2s_data[dir_name]['ensembles']['RMM1(obs)'][:n_pred, :] 
+            era5_obs['RMM2'] = s2s_data[dir_name]['ensembles']['RMM2(obs)'][:n_pred, :]
             self.observed_preds['ERA5(obs)'] = era5_obs
             
         elif dir_name in ['ecmwf', 'eccc']:
             for hdate_id in hdate_ids:
                 pred_mean = {}
+                pred_lower = {}
+                pred_upper = {}
                 ensembles = {}
-                pred_mean['RMM1'] = s2s_data[dir_name]['ensemble_mean_rmm1.nc']['RMM1'][hdate_id][-n_pred:, :] # [n_pred, lead_time], select 'hdate' index as 9 (920, 46)
-                pred_mean['RMM2'] = s2s_data[dir_name]['ensemble_mean_rmm2.nc']['RMM2'][hdate_id][-n_pred:, :] # [n_pred, lead_time]
+                pred_mean['RMM1'] = s2s_data[dir_name]['ensemble_mean_rmm1.nc']['RMM1'][hdate_id][:n_pred, :] # [n_pred, lead_time], select 'hdate' index as 9 (920, 46)
+                pred_mean['RMM2'] = s2s_data[dir_name]['ensemble_mean_rmm2.nc']['RMM2'][hdate_id][:n_pred, :] # [n_pred, lead_time]
 
-                ensembles['RMM1'] = s2s_data[dir_name]['ensembles_rmm1.nc']['RMM1'][hdate_id][-n_pred:, :, :] # [n_pred, lead_time, num_ensembles]
-                ensembles['RMM2'] = s2s_data[dir_name]['ensembles_rmm2.nc']['RMM2'][hdate_id][-n_pred:, :, :] # [n_pred, lead_time, num_ensembles]
-                key_name = dir_name.upper() + f"_hdate={hdate_id}"
+                ensembles['RMM1'] = s2s_data[dir_name]['ensembles_rmm1.nc']['RMM1'][hdate_id][:n_pred, :, :] # [n_pred, lead_time, num_ensembles]
+                ensembles['RMM2'] = s2s_data[dir_name]['ensembles_rmm2.nc']['RMM2'][hdate_id][:n_pred, :, :] # [n_pred, lead_time, num_ensembles]
+                key_name = dir_name + f"_hdate={hdate_id}"
                 self.observed_preds[key_name] = pred_mean
-                if hdate_id == hdate_ids[-1]:
-                    self.observed_preds['Ensembles'+f"_hdate={hdate_id}"] = ensembles
+                for rmm in ['RMM1', 'RMM2']:
+                    pred_std = ensembles[rmm].std(axis=-1)
+                    pred_lower[rmm] = pred_mean[rmm] - pred_std
+                    pred_upper[rmm] = pred_mean[rmm] + pred_std
+                self.lower_confs[dir_name] = pred_lower
+                self.upper_confs[dir_name] = pred_upper
+                if plot_ensembles:
+                    if hdate_id == hdate_ids[-1]:
+                        self.observed_preds['ensembles'+f"_hdate={hdate_id}"] = ensembles
         else:
             pred_mean = {}
+            pred_lower = {}
+            pred_upper = {}
             ensembles = {}
-            pred_mean['RMM1'] = s2s_data[dir_name]['ensemble_mean_rmm1.nc']['RMM1'][-n_pred:, :] 
-            pred_mean['RMM2'] = s2s_data[dir_name]['ensemble_mean_rmm2.nc']['RMM2'][-n_pred:, :]
+            pred_mean['RMM1'] = s2s_data[dir_name]['ensemble_mean_rmm1.nc']['RMM1'][:n_pred, :] 
+            pred_mean['RMM2'] = s2s_data[dir_name]['ensemble_mean_rmm2.nc']['RMM2'][:n_pred, :]
                 
-            ensembles['RMM1'] = s2s_data[dir_name]['ensembles_rmm1.nc']['RMM1'][-n_pred:, :, :]
-            ensembles['RMM2'] = s2s_data[dir_name]['ensembles_rmm2.nc']['RMM2'][-n_pred:, :, :]
-            self.observed_preds[dir_name.upper()] = pred_mean
-            self.observed_preds['Ensembles'] = ensembles
+            ensembles['RMM1'] = s2s_data[dir_name]['ensembles_rmm1.nc']['RMM1'][:n_pred, :, :]
+            ensembles['RMM2'] = s2s_data[dir_name]['ensembles_rmm2.nc']['RMM2'][:n_pred, :, :]
+            self.observed_preds[dir_name] = pred_mean
+            for rmm in ['RMM1', 'RMM2']:
+                pred_std = ensembles[rmm].std(axis=-1)
+                pred_lower[rmm] = pred_mean[rmm] - pred_std
+                pred_upper[rmm] = pred_mean[rmm] + pred_std
+            self.lower_confs[dir_name] = pred_lower
+            self.upper_confs[dir_name] = pred_upper
+            if plot_ensembles:
+                self.observed_preds['ensembles'] = ensembles
 
         num_legends = len(self.observed_preds.keys())
         # colors = palette_colors[0 : 0 + num_legends*2 : 2]
@@ -434,7 +467,8 @@ class EmpGPMJOPred:
         i, j = 0, 0
         for title_name in title_names:
             ax = axs[j]
-            ax.plot(dates[:self.lead_time], self.obs[self.widths[0]][title_name][pred_id,:], color='black', marker='o', label='Truth')
+            ax.plot(dates[:self.lead_time], self.obs[self.widths[0]][title_name][pred_id,:], 
+                color='black', marker='o', label='Truth(BOM)')
             for (color, marker, key) in zip(colors, markers, self.observed_preds.keys()):
                 val = self.observed_preds[key][title_name][pred_id, ...]
                 lead_time = len(val)
@@ -451,7 +485,7 @@ class EmpGPMJOPred:
                     lw = 4.0
                     alpha = 1.0
                     markersize = 10
-                elif 'Ensembles' in key:
+                elif 'ensembles' in key:
                     label = 'Ensembles'
                     ls = '-'
                     lw = 2.5
@@ -459,7 +493,12 @@ class EmpGPMJOPred:
                     markersize = 2
                     color = 'tab:gray'
                 else:
-                    label = key
+                    if key in ['ecmwf_txt','ECMWF_TXT']:
+                        label = 'ECMWF'
+                    elif key in ['ERA5(obs)', 'ERA5(OBS)']:
+                        label = 'Truth(ERA5)'
+                    else:
+                        label = key.upper()
                     ls = '--'
                     lw = 3.5
                     alpha = 0.95
@@ -471,7 +510,7 @@ class EmpGPMJOPred:
                         marker=marker, markersize=markersize, 
                         label=label)
                 
-                if isinstance(key, (int, float)):
+                if key != 'ERA5(obs)': #isinstance(key, (int, float))
                     ax.fill_between(dates[:lead_time], self.lower_confs[key][title_name][pred_id,:], 
                                 self.upper_confs[key][title_name][pred_id,:], 
                                 alpha=0.2, color=color)#, label=f'CI ({key})')
@@ -527,7 +566,7 @@ class EmpGPMJOPred:
         final_labels = list(unique_labels.keys())
         
         ncol_legend = 4 if (num_legends+1) > 5 else (num_legends+1)
-        fig.legend(final_lines, final_labels, fontsize=50, loc='lower center', bbox_to_anchor=(0.53, -0.25),
+        fig.legend(final_lines, final_labels, fontsize=50, loc='lower center', bbox_to_anchor=(0.53, -0.15),
                     ncol=ncol_legend , fancybox=True, shadow=True)
 
         parent_dir_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # ../SINDy_RealData
