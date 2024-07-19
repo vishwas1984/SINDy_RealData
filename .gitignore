@@ -2,6 +2,8 @@
 .DS_Store
 .idea
 .vscode
+lightning_logs/
+.lr_find*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
