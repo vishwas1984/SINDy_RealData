@@ -1,8 +1,41 @@
 import os
 import pandas as pd
-from datetime import datetime, timedelta
+import datetime
 import numpy as np
 import pickle
+
+def get_correct_dates(year_start=2000, year_end=2019):
+    """
+    Return all the dates of Mondays and Thusrdays from year_start-01-01 to year_end-12-31
+    """
+    # Define the years you want to consider
+    years = list(range(year_start, year_end+1))
+
+    # Define the days of the week you're interested in (0=Monday, 3=Thursday)
+    days_of_week = [0, 3]
+
+    # Initialize a list to store the dates
+    dates_list = []
+
+    # Iterate over each year
+    for year in years:
+        # Iterate over each month
+        for month in range(1, 13):
+            # Iterate over each day of the month
+            for day in range(1, 32):
+                try:
+                    # Create a date object
+                    date = datetime.date(year, month, day)
+                    # Check if the day is Monday or Thursday and not 'xxxx-01-01'
+                    if date.weekday() in days_of_week: #and date.strftime('%m-%d') not in ['01-01']:
+                        # Add the date to the list
+                        dates_list.append(date)
+                except ValueError:
+                    # Ignore invalid dates
+                    continue
+    return dates_list
+
+
 
 # Function to read and process all txt files in a given folder
 def process_folder(subfolder_path):
@@ -46,8 +79,22 @@ def process_folder(subfolder_path):
         
         # Convert 'Date_day0' to datetime and add 1 day to create 'S'
         combined_df['Date_day0'] = pd.to_datetime(combined_df['Date_day0'], format='%Y-%m-%d')
-        combined_df['S'] = (combined_df['Date_day0'] + timedelta(days=1) - datetime(1979, 1, 1)).dt.days
 
+        # # Drop rows where 'Date_day0' is "xxxx-12-31" and not Sunday or Wednesday
+        # combined_df = combined_df[
+        #     ~((combined_df['Date_day0'].dt.strftime('%m-%d') == '12-31') & 
+        #       (~combined_df['Date_day0'].dt.weekday.isin([2, 6])))
+        # ]
+        # # Drop rows where 'Date_day0' is "xxxx-12-31" or "xxxx-01-02"
+        # combined_df = combined_df[
+        #     ~combined_df['Date_day0'].dt.strftime('%m-%d').isin(['12-31', '01-02'])
+        # ]
+
+
+
+        combined_df['S'] = (combined_df['Date_day0'] + datetime.timedelta(days=1) - datetime.datetime(1979, 1, 1)).dt.days
+        combined_df['original_start_date'] = combined_df['Date_day0'] + datetime.timedelta(days=1)
+        
         # Add Amplitude(0)
         if "RMM1(0)" in combined_df.columns and "RMM2(0)" in combined_df.columns:
             combined_df['Amplitude(0)'] = np.sqrt(combined_df["RMM1(0)"]**2 + combined_df["RMM2(0)"]**2)
@@ -81,6 +128,14 @@ def creat_dict(folder_path):
                     for col in df.columns:
                         if col not in ['Date_day0', 'lead_time']:
                             combined_arrays[col] = df.pivot(index='Date_day0', columns='lead_time', values=col).to_numpy()
+                    
+                    # dates_len, num_hdates = combined_arrays['S'].shape
+                    # dates_list = get_correct_dates(year_start=2000, year_end=2020)[:dates_len]
+                    # combined_arrays['start_date'] = pd.to_datetime(dates_list).to_numpy()
+                    # combined_arrays['original_start_date'] = combined_arrays['original_start_date'][:,0]
+                    # dates_correct = (pd.to_datetime(dates_list) - pd.to_datetime("1979-01-01")).days
+                    # combined_arrays['S'] = dates_correct[:,None].repeat(num_hdates, axis=1)
+                    
                     dataframes_dict[subfolder_key] = combined_arrays
                 elif subfolder == "EnsMembers":
                     subfolder_key = "ensembles"
@@ -99,6 +154,15 @@ def creat_dict(folder_path):
                     combined_arrays['S'] = df.pivot(index='Date_day0', columns='lead_time', values='S').to_numpy()
                     combined_arrays['RMM1(obs)'] = df.pivot(index='Date_day0', columns='lead_time', values='RMM1_obs').to_numpy()
                     combined_arrays['RMM2(obs)'] = df.pivot(index='Date_day0', columns='lead_time', values='RMM2_obs').to_numpy()
+                    
+                    # dates_len, num_hdates = combined_arrays['S'].shape
+                    # dates_list = get_correct_dates(year_start=2000, year_end=2020)[:dates_len]
+                    # combined_arrays['start_date'] = pd.to_datetime(dates_list).to_numpy()
+                    # combined_arrays['original_start_date'] = df.pivot(index='Date_day0', columns='lead_time', values='original_start_date').to_numpy()[:,0]
+                    
+                    # dates_correct = (pd.to_datetime(dates_list) - pd.to_datetime("1979-01-01")).days
+                    # combined_arrays['S'] = dates_correct[:,None].repeat(num_hdates, axis=1)
+
                     dataframes_dict[subfolder_key] = combined_arrays
                 else:
                     dataframes_dict[subfolder] = df

@@ -464,6 +464,17 @@ class EmpGPMJOPred:
         df_dates = pd.to_datetime(df[["year", "month", "day"]], format="%Y-%m-%d")
         dates = pd.date_range(df_dates[0], periods=max_lead_time, freq='1D')
 
+        # Define tick positions for the x-axis
+        num_ticks = 5
+        tick_positions = pd.date_range(start=dates[0], end=dates[-1], periods=num_ticks)
+
+        # Select 5 evenly spaced tick positions
+        tick_indices = np.linspace(0, len(dates)-1, num_ticks, dtype=int)
+        fixed_tick_positions = [dates[i] for i in tick_indices]
+
+        # Generate labels, showing only 0, 2, ..., num_ticks-1-th label
+        tick_labels = [date.strftime('%b-%d-%Y') if idx % 2 == 0 else '' for idx, date in enumerate(fixed_tick_positions)]
+
         i, j = 0, 0
         for title_name in title_names:
             ax = axs[j]
@@ -472,7 +483,6 @@ class EmpGPMJOPred:
             for (color, marker, key) in zip(colors, markers, self.observed_preds.keys()):
                 val = self.observed_preds[key][title_name][pred_id, ...]
                 lead_time = len(val)
-                tick_positions = dates#np.arange(60+1)
 
                 # label = r'$\bf{GP}$' + f"({key})" if isinstance(key, (int, float)) else key
                 # ls = '-' if isinstance(key, (int, float)) else '--'
@@ -496,7 +506,7 @@ class EmpGPMJOPred:
                     if key in ['ecmwf_txt','ECMWF_TXT']:
                         label = 'ECMWF'
                     elif key in ['ERA5(obs)', 'ERA5(OBS)']:
-                        label = 'Truth(ERA5)'
+                        label = 'ERA5'
                     else:
                         label = key.upper()
                     ls = '--'
@@ -516,19 +526,21 @@ class EmpGPMJOPred:
                                 alpha=0.2, color=color)#, label=f'CI ({key})')
                 
             # ax.set_xlabel("Forecast lead time (days)", fontsize=38, labelpad=15)
-            ax.set_title(f'Time Series of {title_name}', pad=25, fontsize=40, fontweight='bold', color='blue')
+            ax.set_title(f'{title_name}', pad=25, fontsize=40, fontweight='bold', color='blue')
 
             # Set x-ticks to be evenly spaced with values from grid_x
             ax.set_xticks(tick_positions)
-            ax.set_xticklabels(tick_positions)
+            ax.set_xticklabels(tick_positions.strftime('%b-%d-%Y'))
             ax.tick_params(axis='x', labelsize=33, rotation=0, length=10, width=2, colors='black', direction='inout')
 
 
             # Setting the grid
             # Making the grid more sparse by setting the major ticks
-            # ax.xaxis.set_major_locator(MaxNLocator(13))  # Number of grid lines on x-axis
-            ax.xaxis.set_major_locator(mdates.DayLocator(interval=15))
-            ax.xaxis.set_major_formatter(mdates.DateFormatter('%b-%d-%Y'))
+            # Set x-ticks to be evenly spaced with values from fixed_tick_positions
+            # ax.xaxis.set_major_locator(mdates.DayLocator(interval=15))
+            # ax.xaxis.set_major_formatter(mdates.DateFormatter('%b-%d-%Y'))
+            ax.set_xticks(fixed_tick_positions)
+            ax.set_xticklabels(tick_labels)
             ax.yaxis.set_major_locator(MaxNLocator(9))  # Number of grid lines on y-axis
 
 
@@ -547,7 +559,11 @@ class EmpGPMJOPred:
         plt.subplots_adjust(bottom=0.01)
         # plt.subplots_adjust(top=0.1)
         plt.tight_layout(rect=[0.05, 0.05, 1, 0.95])
-        # fig.suptitle(f"Metrics", fontsize=65, fontweight='bold')
+        # fig.suptitle(f"60--Days Time Series from {dates.strftime('%b-%d-%Y')[0]} to {dates.strftime('%b-%d-%Y')[-1]}", 
+        #             fontsize=55, fontweight='bold', y=1.05)
+        fig.suptitle(f"60--Days Time Series", 
+                    fontsize=55, fontweight='bold', y=1.05)
+        
 
         # lines = [] 
         # labels = [] 
