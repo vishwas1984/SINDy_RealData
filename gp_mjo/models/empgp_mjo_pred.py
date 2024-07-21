@@ -61,6 +61,7 @@ class EmpGPMJOPred:
         self.observed_preds = {}
         self.lower_confs = {}
         self.upper_confs = {}
+        self.pred_covs = {}
 
         self.n_trains = {}
         self.n_vals = {}
@@ -114,6 +115,7 @@ class EmpGPMJOPred:
             self.observed_preds[width] = emp_model.observed_preds
             self.lower_confs[width] = emp_model.lower_confs
             self.upper_confs[width] = emp_model.upper_confs
+            self.pred_covs[width] = emp_model.pred_covs # [n_pred, lead_time, 2, 2]
 
             self.emp_model = emp_model
     
@@ -247,9 +249,9 @@ class EmpGPMJOPred:
             self.amplitude_err_entire[model_name] = emp_model.amplitude_err(pred_rmm1=pred_mean_rmm1, pred_rmm2=pred_mean_rmm2, obs_rmm1=obs_rmm1, obs_rmm2=obs_rmm2)
     
     
-    def plot_metrics(self, nrows=2, ncols=3):
-        plt.rc('xtick', labelsize=30)  # fontsize of the tick labels
-        plt.rc('ytick', labelsize=35)  # fontsize of the tick labels
+    def plot_metrics(self, nrows=2, ncols=3, plot_skill=True):
+        plt.rc('xtick', labelsize=38)  # fontsize of the tick labels
+        plt.rc('ytick', labelsize=38)  # fontsize of the tick labels
         plt.rcParams['lines.linewidth'] = 3.0 # Change linewidth of plots
         
         palette_colors = plt.get_cmap('tab20').colors  # Use the 'tab20' colormap
@@ -267,9 +269,10 @@ class EmpGPMJOPred:
                 self.phase_err_entire, self.amplitude_err_entire, 
                 self.crps_entire, self.mll_entire]
         title_names = ['COR', 'RMSE', 'Phase Error', 'Amplitude Error', 'CRPS', 'Ignorance Score']
+        skills = [0.5, 1.4, 0.0, -0.6, 0.6, -2.0]
 
         i, j = 0, 0
-        for (title_name, metric) in zip(title_names, metrics):
+        for (title_name, metric, skill) in zip(title_names, metrics, skills):
             ax = axs[i,j]
             for (color, marker, key) in zip(colors, markers, metric.keys()):
                 val = metric[key]
@@ -291,16 +294,17 @@ class EmpGPMJOPred:
                         ls=ls, lw=lw, alpha=alpha,
                         marker=marker, markersize=10, 
                         label=label)
+                if plot_skill:
+                    ax.axhline(y = skill, color = 'black', linestyle = '--', lw=2.8)
                 
-                ax.set_xlabel("Forecast lead time (days)", fontsize=38, labelpad=15)
-                ax.set_title(f'{title_name}', pad=25, fontsize=40, fontweight='bold', color='blue')
+                ax.set_xlabel("Forecast lead time (days)", fontsize=45, labelpad=18)
+                ax.set_title(f'{title_name}', pad=32, fontsize=52, fontweight='bold', color='blue')
 
                 # Set x-ticks to be evenly spaced with values from grid_x
                 ax.set_xticks(tick_positions)
                 ax.set_xticklabels(tick_positions)
-                ax.tick_params(axis='x', labelsize=33, rotation=0, length=10, width=2, colors='black', direction='inout')
-
-
+                ax.tick_params(axis='x', labelsize=38, rotation=0, length=10, width=2, colors='black', direction='inout')
+                
                 # Setting the grid
                 # Making the grid more sparse by setting the major ticks
                 ax.xaxis.set_major_locator(MaxNLocator(13))  # Number of grid lines on x-axis
@@ -330,7 +334,7 @@ class EmpGPMJOPred:
         # lines.extend(line) 
         # labels.extend(label)
         ncol_legend = 7 if num_legends > 7 else num_legends
-        fig.legend(lines, labels, fontsize=50, loc='lower center', bbox_to_anchor=(0.53, -0.06),
+        fig.legend(lines, labels, fontsize=65, loc='lower center', bbox_to_anchor=(0.53, -0.05),
                     ncol=ncol_legend, fancybox=True, shadow=True)
 
         parent_dir_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # ../SINDy_RealData
@@ -340,8 +344,10 @@ class EmpGPMJOPred:
         plt.show()
     
     
-    def plot_ts(self, nrows=1, ncols=2, hdate_ids=[9, 12, 15, 19], 
-                pred_id=0, n_pred=None, plot_ensembles=False):
+    def plot_ts(self, nrows=2, ncols=2, hdate_ids=[9, 12, 15, 19], 
+                pred_id=0, n_pred=None, Ns=1000, seed=99, 
+                angle_mean_from_samples=True, amplitude_mean_from_samples=True, 
+                plot_ensembles=False):
         plt.rc('xtick', labelsize=30)  # fontsize of the tick labels
         plt.rc('ytick', labelsize=35)  # fontsize of the tick labels
         plt.rcParams['lines.linewidth'] = 3.0 # Change linewidth of plots
@@ -374,38 +380,8 @@ class EmpGPMJOPred:
             print("test ids of GP model and selected S2S data are Equal! Continue...")
         else:
             RuntimeError("test ids of GP model and selected S2S data are not Equal! Please check.")
-
-        if dir_name == 'ecmwf_txt':
-            pred_mean = {}
-            pred_lower = {}
-            pred_upper = {}
-            ensembles = {}
-            # pred_mean['RMM1'] = s2s_data[dir_name]['ensemble_mean']['RMM1(forecast)'][-n_pred:, :] # [n_pred, lead_time], select 'hdate' index as 9 (920, 46)
-            # pred_mean['RMM2'] = s2s_data[dir_name]['ensemble_mean']['RMM2(forecast)'][-n_pred:, :] # [n_pred, lead_time]
-
-            ensembles['RMM1'] = s2s_data[dir_name]['ensembles']['RMM1(forecast)'][:n_pred, :, :] # [n_pred, lead_time, num_ensembles]
-            ensembles['RMM2'] = s2s_data[dir_name]['ensembles']['RMM2(forecast)'][:n_pred, :, :] # [n_pred, lead_time, num_ensembles]
-
-            pred_mean['RMM1'] = ensembles['RMM1'].mean(axis=-1) # [n_pred, lead_time], select 'hdate' index as 9 (920, 46)
-            pred_mean['RMM2'] = ensembles['RMM2'].mean(axis=-1) # [n_pred, lead_time]
-
-            self.observed_preds[dir_name] = pred_mean
-            for rmm in ['RMM1', 'RMM2']:
-                pred_std = ensembles[rmm].std(axis=-1)
-                pred_lower[rmm] = pred_mean[rmm] - pred_std
-                pred_upper[rmm] = pred_mean[rmm] + pred_std
-            self.lower_confs[dir_name] = pred_lower
-            self.upper_confs[dir_name] = pred_upper
-
-            if plot_ensembles:
-                self.observed_preds['ensembles'] = ensembles
-
-            era5_obs = {}
-            era5_obs['RMM1'] = s2s_data[dir_name]['ensembles']['RMM1(obs)'][:n_pred, :] 
-            era5_obs['RMM2'] = s2s_data[dir_name]['ensembles']['RMM2(obs)'][:n_pred, :]
-            self.observed_preds['ERA5(obs)'] = era5_obs
             
-        elif dir_name in ['ecmwf', 'eccc']:
+        if dir_name in ['ecmwf', 'eccc']:
             for hdate_id in hdate_ids:
                 pred_mean = {}
                 pred_lower = {}
@@ -417,13 +393,24 @@ class EmpGPMJOPred:
                 ensembles['RMM1'] = s2s_data[dir_name]['ensembles_rmm1.nc']['RMM1'][hdate_id][:n_pred, :, :] # [n_pred, lead_time, num_ensembles]
                 ensembles['RMM2'] = s2s_data[dir_name]['ensembles_rmm2.nc']['RMM2'][hdate_id][:n_pred, :, :] # [n_pred, lead_time, num_ensembles]
                 key_name = dir_name + f"_hdate={hdate_id}"
+
                 self.observed_preds[key_name] = pred_mean
+
+                pred_covs = np.zeros((n_pred, pred_mean['RMM1'].shape[1], 2, 2)) # [n_pred, lead_time, 2, 2]
+                ensembles_rmm1_norm = ensembles['RMM1'] - ensembles['RMM1'].mean(axis=-1)[..., None]
+                ensembles_rmm2_norm = ensembles['RMM2'] - ensembles['RMM2'].mean(axis=-1)[..., None]
+                pred_crosscov = np.multiply(ensembles_rmm1_norm, ensembles_rmm2_norm).mean(axis=-1) # [n_pred, lead_time]
+                pred_covs[:,:, 0, 0] = ensembles['RMM1'].std(axis=-1) ** 2
+                pred_covs[:,:, 1, 1] = ensembles['RMM2'].std(axis=-1) ** 2
+                pred_covs[:,:, 0, 1] = pred_covs[:,:, 1, 0] = pred_crosscov
+                self.pred_covs[key_name] = pred_covs
+
                 for rmm in ['RMM1', 'RMM2']:
                     pred_std = ensembles[rmm].std(axis=-1)
                     pred_lower[rmm] = pred_mean[rmm] - pred_std
                     pred_upper[rmm] = pred_mean[rmm] + pred_std
-                self.lower_confs[dir_name] = pred_lower
-                self.upper_confs[dir_name] = pred_upper
+                self.lower_confs[key_name] = pred_lower
+                self.upper_confs[key_name] = pred_upper
                 if plot_ensembles:
                     if hdate_id == hdate_ids[-1]:
                         self.observed_preds['ensembles'+f"_hdate={hdate_id}"] = ensembles
@@ -432,12 +419,40 @@ class EmpGPMJOPred:
             pred_lower = {}
             pred_upper = {}
             ensembles = {}
-            pred_mean['RMM1'] = s2s_data[dir_name]['ensemble_mean_rmm1.nc']['RMM1'][:n_pred, :] 
-            pred_mean['RMM2'] = s2s_data[dir_name]['ensemble_mean_rmm2.nc']['RMM2'][:n_pred, :]
-                
-            ensembles['RMM1'] = s2s_data[dir_name]['ensembles_rmm1.nc']['RMM1'][:n_pred, :, :]
-            ensembles['RMM2'] = s2s_data[dir_name]['ensembles_rmm2.nc']['RMM2'][:n_pred, :, :]
-            self.observed_preds[dir_name] = pred_mean
+            if dir_name == 'ecmwf_txt':
+                # pred_mean['RMM1'] = s2s_data[dir_name]['ensemble_mean']['RMM1(forecast)'][-n_pred:, :] # [n_pred, lead_time], select 'hdate' index as 9 (920, 46)
+                # pred_mean['RMM2'] = s2s_data[dir_name]['ensemble_mean']['RMM2(forecast)'][-n_pred:, :] # [n_pred, lead_time]
+
+                ensembles['RMM1'] = s2s_data[dir_name]['ensembles']['RMM1(forecast)'][:n_pred, :, :] # [n_pred, lead_time, num_ensembles]
+                ensembles['RMM2'] = s2s_data[dir_name]['ensembles']['RMM2(forecast)'][:n_pred, :, :] # [n_pred, lead_time, num_ensembles]
+
+                pred_mean['RMM1'] = ensembles['RMM1'].mean(axis=-1) # [n_pred, lead_time], select 'hdate' index as 9 (920, 46)
+                pred_mean['RMM2'] = ensembles['RMM2'].mean(axis=-1) # [n_pred, lead_time]
+                self.observed_preds[dir_name] = pred_mean
+
+                era5_obs = {}
+                era5_obs['RMM1'] = s2s_data[dir_name]['ensembles']['RMM1(obs)'][:n_pred, :] 
+                era5_obs['RMM2'] = s2s_data[dir_name]['ensembles']['RMM2(obs)'][:n_pred, :]
+                era5_obs['Phase'] = np.arctan2( era5_obs['RMM2'], era5_obs['RMM1'] ) * 180 / np.pi + 180
+                era5_obs['Amplitude'] = np.sqrt( np.square(era5_obs['RMM1']) + np.square(era5_obs['RMM2']) )
+                self.observed_preds['ERA5(obs)'] = era5_obs
+            else:        
+                ensembles['RMM1'] = s2s_data[dir_name]['ensembles_rmm1.nc']['RMM1'][:n_pred, :, :]
+                ensembles['RMM2'] = s2s_data[dir_name]['ensembles_rmm2.nc']['RMM2'][:n_pred, :, :]
+
+                pred_mean['RMM1'] = s2s_data[dir_name]['ensemble_mean_rmm1.nc']['RMM1'][:n_pred, :] 
+                pred_mean['RMM2'] = s2s_data[dir_name]['ensemble_mean_rmm2.nc']['RMM2'][:n_pred, :]
+                self.observed_preds[dir_name] = pred_mean
+            
+            pred_covs = np.zeros((n_pred, pred_mean['RMM1'].shape[1], 2, 2)) # [n_pred, lead_time, 2, 2]
+            ensembles_rmm1_norm = ensembles['RMM1'] - ensembles['RMM1'].mean(axis=-1)[..., None]
+            ensembles_rmm2_norm = ensembles['RMM2'] - ensembles['RMM2'].mean(axis=-1)[..., None]
+            pred_crosscov = np.multiply(ensembles_rmm1_norm, ensembles_rmm2_norm).mean(axis=-1) # [n_pred, lead_time]
+            pred_covs[:,:, 0, 0] = ensembles['RMM1'].std(axis=-1) ** 2
+            pred_covs[:,:, 1, 1] = ensembles['RMM2'].std(axis=-1) ** 2
+            pred_covs[:,:, 0, 1] = pred_covs[:,:, 1, 0] = pred_crosscov
+            self.pred_covs[dir_name] = pred_covs
+            
             for rmm in ['RMM1', 'RMM2']:
                 pred_std = ensembles[rmm].std(axis=-1)
                 pred_lower[rmm] = pred_mean[rmm] - pred_std
@@ -446,13 +461,66 @@ class EmpGPMJOPred:
             self.upper_confs[dir_name] = pred_upper
             if plot_ensembles:
                 self.observed_preds['ensembles'] = ensembles
+        
+        # Phase & Amplitude
+        for key in self.lower_confs.keys():
+            pred_mean_rmm1 = self.observed_preds[key]['RMM1'] # [n_pred, lead_time]
+            pred_mean_rmm2 = self.observed_preds[key]['RMM2'] # [n_pred, lead_time]
+            pred_mean = np.stack((pred_mean_rmm1, pred_mean_rmm2), axis=-1) # [n_pred, lead_time, 2]
+            pred_cov = self.pred_covs[key] # [n_pred, lead_time, 2, 2]
+
+            # Generate samples
+            samples = np.zeros((Ns, pred_mean.shape[0], pred_mean.shape[1], 2))
+            rng = np.random.default_rng(seed)
+            for i in range(pred_mean.shape[0]):
+                for j in range(pred_mean.shape[1]):
+                    mean = pred_mean[i, j]
+                    cov = pred_cov[i, j]
+                    # Ensure covariance matrix is symmetric positive semi-definite
+                    cov = (cov + cov.T) / 2
+                    cov += np.eye(cov.shape[0]) * 1e-8  # Adding a small value to the diagonal for numerical stability
+                    samples[:, i, j, :] = rng.multivariate_normal(mean, cov, Ns)
+                    
+            
+            # Calc phase (arctan2)
+            angle_samples = np.arctan2(samples[...,1], samples[...,0]) * 180 / np.pi + 180 # (Ns, n_pred, lead_time) array
+            if angle_mean_from_samples:
+                angle_mean = np.mean(angle_samples, axis=0) # (n_pred, lead_time) array
+            else:
+                angle_mean = np.arctan2(pred_mean[...,1],pred_mean[...,0])  * 180 / np.pi + 180  # np.mean(angle_samples, axis=0)# (1, ) array 
+            
+            angle_norm = angle_samples - angle_mean[None,...] # (Ns, n_pred, lead_time) array
+            angle_var = np.multiply(angle_norm, angle_norm).mean(axis=0) # (n_pred, lead_time) array
+            angle_std = np.sqrt(angle_var)
+
+            self.observed_preds[key]['Phase'] = angle_mean
+            self.lower_confs[key]['Phase'] = angle_mean - angle_std
+            self.upper_confs[key]['Phase'] = angle_mean + angle_std
+
+            # Calc amplitude
+            amplitude_samples = np.sqrt( np.square(samples[...,0]) + np.square(samples[...,1]) ) # (Ns, n_pred, lead_time) array
+            if amplitude_mean_from_samples:
+                amplitude_mean = np.mean(amplitude_samples, axis=0) # (n_pred, lead_time) array
+            else:
+                amplitude_mean = np.sqrt( np.square(pred_mean[...,0]) + np.square(pred_mean[...,1]) ) # (n_pred, lead_time) array
+            amplitude_norm = amplitude_samples - amplitude_mean[None,...] # (Ns, n_pred, lead_time) array
+            amplitude_var = np.multiply(amplitude_norm, amplitude_norm).mean(axis=0) # (n_pred, lead_time) array
+            amplitude_std = np.sqrt(amplitude_var)
+
+            self.observed_preds[key]['Amplitude'] = amplitude_mean
+            self.lower_confs[key]['Amplitude'] = amplitude_mean - amplitude_std
+            self.upper_confs[key]['Amplitude'] = amplitude_mean + amplitude_std
+
+            if isinstance(key, (int, float)):
+                self.obs[key]['Phase'] = np.arctan2( self.obs[key]['RMM2'], self.obs[key]['RMM1'] ) * 180 / np.pi + 180
+                self.obs[key]['Amplitude'] = self.obs[key]['amplitude']
 
         num_legends = len(self.observed_preds.keys())
         # colors = palette_colors[0 : 0 + num_legends*2 : 2]
         colors = palette_colors[0 : 0 + num_legends]
         markers = markers_class[0 : 0 + num_legends]
 
-        title_names = ['RMM1', 'RMM2']#['RMM1', 'RMM2', 'Phase', 'Amplitude']
+        title_names = ['RMM1', 'RMM2', 'Phase', 'Amplitude']
 
         # compute dates at pred_id
         years = self.obs[self.widths[0]]['year'][pred_id, :].astype('int')
@@ -477,7 +545,7 @@ class EmpGPMJOPred:
 
         i, j = 0, 0
         for title_name in title_names:
-            ax = axs[j]
+            ax = axs[i, j]
             ax.plot(dates[:self.lead_time], self.obs[self.widths[0]][title_name][pred_id,:], 
                 color='black', marker='o', label='Truth(BOM)')
             for (color, marker, key) in zip(colors, markers, self.observed_preds.keys()):
@@ -562,18 +630,18 @@ class EmpGPMJOPred:
         # fig.suptitle(f"60--Days Time Series from {dates.strftime('%b-%d-%Y')[0]} to {dates.strftime('%b-%d-%Y')[-1]}", 
         #             fontsize=55, fontweight='bold', y=1.05)
         fig.suptitle(f"60--Days Time Series", 
-                    fontsize=55, fontweight='bold', y=1.05)
+                    fontsize=55, fontweight='bold', y=1.00)
         
 
         # lines = [] 
         # labels = [] 
         # for ax in fig.axes: 
-        lines, labels = axs[0].get_legend_handles_labels() 
+        lines, labels = axs[0,0].get_legend_handles_labels() 
         # lines.extend(line) 
         # labels.extend(label)
 
         unique_labels = {}
-        lines, labels = axs[0].get_legend_handles_labels()
+        lines, labels = axs[0,0].get_legend_handles_labels()
         for line, label in zip(lines, labels):
             if label not in unique_labels:
                 unique_labels[label] = line
@@ -582,7 +650,7 @@ class EmpGPMJOPred:
         final_labels = list(unique_labels.keys())
         
         ncol_legend = 4 if (num_legends+1) > 5 else (num_legends+1)
-        fig.legend(final_lines, final_labels, fontsize=50, loc='lower center', bbox_to_anchor=(0.53, -0.15),
+        fig.legend(final_lines, final_labels, fontsize=50, loc='lower center', bbox_to_anchor=(0.53, -0.05),
                     ncol=ncol_legend , fancybox=True, shadow=True)
 
         parent_dir_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # ../SINDy_RealData

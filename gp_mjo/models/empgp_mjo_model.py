@@ -642,5 +642,6 @@ class EmpGPMJO:
 
         mll_total = (-0.5) * (det_term + qua_term + add_val) # [n_pred, lead_time]-shape
         self.errs['mll'] = mll_total.mean(axis=0) # (lead_time, )-shape
+        self.pred_covs = pred_covs
 
         return self.errs['mll']

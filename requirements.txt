@@ -1,9 +1,6 @@
 # Markdown==3.4.1
-# colorama==0.4.6
-# gpytorch==1.10
-# torch==2.0.0.
-# matplotlib==3.7.1
-# prettytable==3.5.0
+# pytorch-forecasting
+# cpflows
 
 ipython
 numpy
@@ -17,6 +14,3 @@ tqdm
 gpytorch
 colorama
 prettytable
-
-pytorch-forecasting
-cpflows
