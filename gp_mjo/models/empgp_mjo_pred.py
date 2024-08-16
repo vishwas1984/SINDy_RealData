@@ -294,7 +294,7 @@ class EmpGPMJOPred:
                         ls=ls, lw=lw, alpha=alpha,
                         marker=marker, markersize=10, 
                         label=label)
-                if plot_skill:
+                if plot_skill and title_name in ['COR', 'RMSE']:
                     ax.axhline(y = skill, color = 'black', linestyle = '--', lw=2.8)
                 
                 ax.set_xlabel("Forecast lead time (days)", fontsize=45, labelpad=18)
@@ -435,7 +435,7 @@ class EmpGPMJOPred:
                 era5_obs['RMM2'] = s2s_data[dir_name]['ensembles']['RMM2(obs)'][:n_pred, :]
                 era5_obs['Phase'] = np.arctan2( era5_obs['RMM2'], era5_obs['RMM1'] ) * 180 / np.pi + 180
                 era5_obs['Amplitude'] = np.sqrt( np.square(era5_obs['RMM1']) + np.square(era5_obs['RMM2']) )
-                self.observed_preds['ERA5(obs)'] = era5_obs
+                # self.observed_preds['ERA5(obs)'] = era5_obs
             else:        
                 ensembles['RMM1'] = s2s_data[dir_name]['ensembles_rmm1.nc']['RMM1'][:n_pred, :, :]
                 ensembles['RMM2'] = s2s_data[dir_name]['ensembles_rmm2.nc']['RMM2'][:n_pred, :, :]
