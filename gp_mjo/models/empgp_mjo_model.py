@@ -460,11 +460,16 @@ class EmpGPMJO:
 
         n_pred = pred_rmm1.shape[0]
 
-        num = obs_rmm1*pred_rmm2 - obs_rmm2*pred_rmm1
-        den = obs_rmm1*pred_rmm1 + obs_rmm2*pred_rmm2
+        # num = obs_rmm1*pred_rmm2 - obs_rmm2*pred_rmm1
+        # den = obs_rmm1*pred_rmm1 + obs_rmm2*pred_rmm2
+        #temp = np.arctan(np.divide(num,den))
 
         temp = np.arctan2(pred_rmm2, pred_rmm1) * 180 / np.pi  - np.arctan2(obs_rmm2, obs_rmm1) * 180 / np.pi
-        #temp = np.arctan(np.divide(num,den))
+        
+        # Normalize temp to the range [0, 180]
+        temp = np.abs(temp)  # Take absolute values of all elements
+        temp = np.where(temp > 180, 360 - temp, temp)  # If an element > 180, convert to 360 - |temp|
+
         self.errs['phase'] = ( np.sum(temp, axis=0) / n_pred ).reshape(-1)
 
         return self.errs['phase']

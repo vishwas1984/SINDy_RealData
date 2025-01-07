@@ -433,7 +433,11 @@ class EmpGPMJOPred:
                 era5_obs = {}
                 era5_obs['RMM1'] = s2s_data[dir_name]['ensembles']['RMM1(obs)'][:n_pred, :] 
                 era5_obs['RMM2'] = s2s_data[dir_name]['ensembles']['RMM2(obs)'][:n_pred, :]
-                era5_obs['Phase'] = np.arctan2( era5_obs['RMM2'], era5_obs['RMM1'] ) * 180 / np.pi + 180
+
+                era5_obs_phase = np.arctan2( era5_obs['RMM2'], era5_obs['RMM1'] ) * 180 / np.pi #+ 180
+                # Absolute to the range [0, 180]
+                era5_obs['Phase'] = np.abs(era5_obs_phase)
+
                 era5_obs['Amplitude'] = np.sqrt( np.square(era5_obs['RMM1']) + np.square(era5_obs['RMM2']) )
                 # self.observed_preds['ERA5(obs)'] = era5_obs
             else:        
@@ -444,7 +448,7 @@ class EmpGPMJOPred:
                 pred_mean['RMM2'] = s2s_data[dir_name]['ensemble_mean_rmm2.nc']['RMM2'][:n_pred, :]
                 self.observed_preds[dir_name] = pred_mean
             
-            pred_covs = np.zeros((n_pred, pred_mean['RMM1'].shape[1], 2, 2)) # [n_pred, lead_time, 2, 2]
+            pred_covs = np.zeros((s2s_test_ids.shape[0], pred_mean['RMM1'].shape[1], 2, 2)) # [n_pred, lead_time, 2, 2]
             ensembles_rmm1_norm = ensembles['RMM1'] - ensembles['RMM1'].mean(axis=-1)[..., None]
             ensembles_rmm2_norm = ensembles['RMM2'] - ensembles['RMM2'].mean(axis=-1)[..., None]
             pred_crosscov = np.multiply(ensembles_rmm1_norm, ensembles_rmm2_norm).mean(axis=-1) # [n_pred, lead_time]
@@ -483,11 +487,17 @@ class EmpGPMJOPred:
                     
             
             # Calc phase (arctan2)
-            angle_samples = np.arctan2(samples[...,1], samples[...,0]) * 180 / np.pi + 180 # (Ns, n_pred, lead_time) array
+            angle_samples = np.arctan2(samples[...,1], samples[...,0]) * 180 / np.pi #+ 180 # (Ns, n_pred, lead_time) array
+            
+            # Absolute to the range [0, 180]
+            angle_samples = np.abs(angle_samples)
+ 
             if angle_mean_from_samples:
                 angle_mean = np.mean(angle_samples, axis=0) # (n_pred, lead_time) array
             else:
                 angle_mean = np.arctan2(pred_mean[...,1],pred_mean[...,0])  * 180 / np.pi + 180  # np.mean(angle_samples, axis=0)# (1, ) array 
+                # Absolute to the range [0, 180]
+                angle_mean = np.abs(angle_mean)
             
             angle_norm = angle_samples - angle_mean[None,...] # (Ns, n_pred, lead_time) array
             angle_var = np.multiply(angle_norm, angle_norm).mean(axis=0) # (n_pred, lead_time) array
@@ -512,7 +522,8 @@ class EmpGPMJOPred:
             self.upper_confs[key]['Amplitude'] = amplitude_mean + amplitude_std
 
             if isinstance(key, (int, float)):
-                self.obs[key]['Phase'] = np.arctan2( self.obs[key]['RMM2'], self.obs[key]['RMM1'] ) * 180 / np.pi + 180
+                obs_angle = np.arctan2( self.obs[key]['RMM2'], self.obs[key]['RMM1'] ) * 180 / np.pi #+ 180
+                self.obs[key]['Phase'] = np.abs(obs_angle)
                 self.obs[key]['Amplitude'] = self.obs[key]['amplitude']
 
         num_legends = len(self.observed_preds.keys())
