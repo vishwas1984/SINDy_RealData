@@ -433,11 +433,7 @@ class EmpGPMJOPred:
                 era5_obs = {}
                 era5_obs['RMM1'] = s2s_data[dir_name]['ensembles']['RMM1(obs)'][:n_pred, :] 
                 era5_obs['RMM2'] = s2s_data[dir_name]['ensembles']['RMM2(obs)'][:n_pred, :]
-
-                era5_obs_phase = np.arctan2( era5_obs['RMM2'], era5_obs['RMM1'] ) * 180 / np.pi #+ 180
-                # Absolute to the range [0, 180]
-                era5_obs['Phase'] = np.abs(era5_obs_phase)
-
+                era5_obs['Phase'] = np.arctan2( era5_obs['RMM2'], era5_obs['RMM1'] ) * 180 / np.pi + 180
                 era5_obs['Amplitude'] = np.sqrt( np.square(era5_obs['RMM1']) + np.square(era5_obs['RMM2']) )
                 # self.observed_preds['ERA5(obs)'] = era5_obs
             else:        
@@ -487,18 +483,14 @@ class EmpGPMJOPred:
                     
             
             # Calc phase (arctan2)
-            angle_samples = np.arctan2(samples[...,1], samples[...,0]) * 180 / np.pi #+ 180 # (Ns, n_pred, lead_time) array
-            
-            # Absolute to the range [0, 180]
-            angle_samples = np.abs(angle_samples)
+            angle_samples = np.arctan2(samples[...,1], samples[...,0]) * 180 / np.pi + 180 # (Ns, n_pred, lead_time) array
  
-            if angle_mean_from_samples:
-                angle_mean = np.mean(angle_samples, axis=0) # (n_pred, lead_time) array
-            else:
-                angle_mean = np.arctan2(pred_mean[...,1],pred_mean[...,0])  * 180 / np.pi + 180  # np.mean(angle_samples, axis=0)# (1, ) array 
-                # Absolute to the range [0, 180]
-                angle_mean = np.abs(angle_mean)
-            
+            # if angle_mean_from_samples:
+            #     angle_mean = np.mean(angle_samples, axis=0) # (n_pred, lead_time) array
+            # else:
+            #     angle_mean = np.arctan2(pred_mean[...,1],pred_mean[...,0])  * 180 / np.pi + 180  # np.mean(angle_samples, axis=0)# (1, ) array 
+            angle_mean = np.arctan2(pred_mean[...,1],pred_mean[...,0])  * 180 / np.pi + 180
+
             angle_norm = angle_samples - angle_mean[None,...] # (Ns, n_pred, lead_time) array
             angle_var = np.multiply(angle_norm, angle_norm).mean(axis=0) # (n_pred, lead_time) array
             angle_std = np.sqrt(angle_var)
@@ -522,8 +514,7 @@ class EmpGPMJOPred:
             self.upper_confs[key]['Amplitude'] = amplitude_mean + amplitude_std
 
             if isinstance(key, (int, float)):
-                obs_angle = np.arctan2( self.obs[key]['RMM2'], self.obs[key]['RMM1'] ) * 180 / np.pi #+ 180
-                self.obs[key]['Phase'] = np.abs(obs_angle)
+                self.obs[key]['Phase'] = np.arctan2( self.obs[key]['RMM2'], self.obs[key]['RMM1'] ) * 180 / np.pi + 180
                 self.obs[key]['Amplitude'] = self.obs[key]['amplitude']
 
         num_legends = len(self.observed_preds.keys())
@@ -557,11 +548,59 @@ class EmpGPMJOPred:
         i, j = 0, 0
         for title_name in title_names:
             ax = axs[i, j]
-            ax.plot(dates[:self.lead_time], self.obs[self.widths[0]][title_name][pred_id,:], 
+            obs_val = self.obs[self.widths[0]][title_name][pred_id,:]
+            
+            # Ensure continuous propagation of phase
+            angle_propogate = np.zeros_like(obs_val)
+            if title_name == 'Phase':
+                angle_propogate[0] = obs_val[0]
+                for t in range(1, len(obs_val)):
+                    diff = obs_val[t] - obs_val[t - 1] # Compute the raw difference between the current and previous angles
+
+                    # Adjust the difference to ensure continuity
+                    if diff > 180:
+                        diff -= 360
+                    elif diff < -180:
+                        diff += 360
+
+                    # Add the adjusted difference to the previous angle
+                    angle_propogate[t] = angle_propogate[t - 1] + diff
+                obs_val = angle_propogate
+            
+            # Plot observations (truth)
+            ax.plot(dates[:self.lead_time], obs_val, 
                 color='black', marker='o', label='Truth(BOM)')
+            
+            # Plot predictions
             for (color, marker, key) in zip(colors, markers, self.observed_preds.keys()):
-                val = self.observed_preds[key][title_name][pred_id, ...]
-                lead_time = len(val)
+                val_mean = self.observed_preds[key][title_name][pred_id, ...]
+                val_lower = self.lower_confs[key][title_name][pred_id,:]
+                val_upper = self.upper_confs[key][title_name][pred_id,:]
+                lead_time = len(val_mean)
+
+                # Ensure continuous propagation of phase
+                if title_name == 'Phase':
+                    val_propogate = {}
+                    val_std = val_upper - val_mean
+                    for val_key, val in zip(['mean', 'std'], [val_mean, val_std]):
+                        val_propogate[val_key] = np.zeros_like(val)
+                        val_propogate[val_key][0] = val[0]
+                        for t in range(1, len(val)):
+                            diff = val[t] - val[t - 1] # Compute the raw difference between the current and previous angles
+
+                            # Adjust the difference to ensure continuity
+                            if val[t] < 90 and val[t - 1] > 270:
+                                diff += 360
+                            if diff > 180:
+                                diff -= 360
+                            elif diff < -180:
+                                diff += 360
+
+                            # Add the adjusted difference to the previous angle
+                            val_propogate[val_key][t] = val_propogate[val_key][t - 1] + diff
+                    val_mean = val_propogate['mean']
+                    val_lower = val_propogate['mean'] - val_propogate['std']
+                    val_upper = val_propogate['mean'] + val_propogate['std']
 
                 # label = r'$\bf{GP}$' + f"({key})" if isinstance(key, (int, float)) else key
                 # ls = '-' if isinstance(key, (int, float)) else '--'
@@ -594,14 +633,14 @@ class EmpGPMJOPred:
                     markersize = 10
 
 
-                ax.plot(dates[:lead_time], val, color=color, 
+                ax.plot(dates[:lead_time], val_mean, color=color, 
                         ls=ls, lw=lw, alpha=alpha,
                         marker=marker, markersize=markersize, 
                         label=label)
                 
                 if key != 'ERA5(obs)': #isinstance(key, (int, float))
-                    ax.fill_between(dates[:lead_time], self.lower_confs[key][title_name][pred_id,:], 
-                                self.upper_confs[key][title_name][pred_id,:], 
+                    ax.fill_between(dates[:lead_time], val_lower, 
+                                val_upper, 
                                 alpha=0.2, color=color)#, label=f'CI ({key})')
                 
             # ax.set_xlabel("Forecast lead time (days)", fontsize=38, labelpad=15)
