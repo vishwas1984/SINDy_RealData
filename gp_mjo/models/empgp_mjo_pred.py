@@ -268,14 +268,14 @@ class EmpGPMJOPred:
         metrics = [self.cor_entire, self.rmse_entire, 
                 self.phase_err_entire, self.amplitude_err_entire, 
                 self.crps_entire, self.mll_entire]
-        title_names = ['COR', 'RMSE', 'Phase Error', 'Amplitude Error', 'CRPS', 'Ignorance Score']
+        title_names = ['COR', 'RMSE', 'Phase Error', 'Amplitude Error', 'CRPS', 'Log Score']
         skills = [0.5, 1.4, 0.0, -0.6, 0.6, -2.0]
 
         i, j = 0, 0
         for (title_name, metric, skill) in zip(title_names, metrics, skills):
             ax = axs[i,j]
             for (color, marker, key) in zip(colors, markers, metric.keys()):
-                val = metric[key]
+                val = - metric[key] if title_name == 'Log Score' else metric[key]
                 lead_time = np.arange(1, 1+len(val))
                 tick_positions = np.arange(60+1)
 
